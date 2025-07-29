@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block title %}User Dashboard - Vehicle Parking App{% endblock %}
+
+{% block content %}
+<div class="header">
+    <h1>User Dashboard</h1>
+</div>
+
+<h3>Your Active Reservations</h3>
+{% if active_reservations %}
+    {% for reservation in active_reservations %}
+    <div style="background: #f8f9fa; padding: 15px; margin: 10px 0; border-radius: 4px;">
+        <strong>{{ reservation.prime_location_name }}</strong><br>
+        Spot #{{ reservation.spot_number }} | Status: {{ reservation.status }}<br>
+        Price: ₹{{ reservation.price_per_hour }}/hour
+    </div>
+    {% endfor %}
+{% else %}
+    <p>No active reservations.</p>
+{% endif %}
+
+<h3>Available Parking Lots</h3>
+{% if available_lots %}
+    {% for lot in available_lots %}
+    <div style="background: #e9ecef; padding: 15px; margin: 10px 0; border-radius: 4px;">
+        <strong>{{ lot.prime_location_name }}</strong><br>
+        {{ lot.address }}, {{ lot.pin_code }}<br>
+        Price: ₹{{ lot.price_per_hour }}/hour | Available Spots: {{ lot.available_spots }}/{{ lot.total_spots }}<br>
+        <em>Booking features will be available in Milestone 4</em>
+    </div>
+    {% endfor %}
+{% else %}
+    <p>No available parking lots at the moment.</p>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+
+{% block title %}Manage Parking Lots - Admin{% endblock %}
+
+{% block content %}
+<div class="header">
+    <h1>Manage Parking Lots</h1>
+    <a href="{{ url_for('admin_add_lot') }}" class="btn">Add New Parking Lot</a>
+</div>
+
+{% if lots %}
+<div style="overflow-x: auto;">
+    <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
+        <thead>
+            <tr style="background: #f8f9fa;">
+                <th style="padding: 12px; text-align: left; border: 1px solid #dee2e6;">Location</th>
+                <th style="padding: 12px; text-align: left; border: 1px solid #dee2e6;">Address</th>
+                <th style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">Price/Hour</th>
+                <th style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">Spots</th>
+                <th style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">Occupancy</th>
+                <th style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for lot in lots %}
+            <tr>
+                <td style="padding: 12px; border: 1px solid #dee2e6;">
+                    <strong>{{ lot.prime_location_name }}</strong>
+                </td>
+                <td style="padding: 12px; border: 1px solid #dee2e6;">
+                    {{ lot.address }}<br>
+                    <small>PIN: {{ lot.pin_code }}</small>
+                </td>
+                <td style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">
+                    ₹{{ lot.price_per_hour }}
+                </td>
+                <td style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">
+                    {{ lot.total_spots or 0 }}
+                </td>
+                <td style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">
+                    <span style="color: #dc3545;">{{ lot.occupied_spots or 0 }}</span> / 
+                    <span style="color: #28a745;">{{ lot.available_spots or 0 }}</span><br>
+                    <small>Occupied / Available</small>
+                </td>
+                <td style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">
+                    <div style="display: flex; gap: 5px; justify-content: center; flex-wrap: wrap;">
+                        <a href="{{ url_for('admin_view_lot', lot_id=lot.id) }}" class="btn" style="padding: 5px 10px; font-size: 0.8em;">View</a>
+                        <a href="{{ url_for('admin_edit_lot', lot_id=lot.id) }}" class="btn" style="padding: 5px 10px; font-size: 0.8em;">Edit</a>
+                        {% if (lot.occupied_spots or 0) == 0 %}
+                        <a href="{{ url_for('admin_delete_lot', lot_id=lot.id) }}" 
+                           class="btn btn-danger" 
+                           style="padding: 5px 10px; font-size: 0.8em;"
+                           onclick="return confirm('Are you sure you want to delete this parking lot?')">Delete</a>
+                        {% else %}
+                        <span style="color: #6c757d; font-size: 0.8em;">Cannot Delete</span>
+                        {% endif %}
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div style="text-align: center; padding: 40px; background: #f8f9fa; border-radius: 8px; margin-top: 20px;">
+    <h3>No Parking Lots Found</h3>
+    <p>Create your first parking lot to get started.</p>
+    <a href="{{ url_for('admin_add_lot') }}" class="btn">Add New Parking Lot</a>
+</div>
+{% endif %}
+
+<div style="margin-top: 20px;">
+    <a href="{{ url_for('admin_dashboard') }}" class="btn">Back to Dashboard</a>
+</div>
+{% endblock %}

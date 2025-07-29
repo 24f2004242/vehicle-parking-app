@@ -5,6 +5,7 @@
 {% block content %}
 <div class="header">
     <h1>Admin Dashboard</h1>
+    <p>Comprehensive parking management system</p>
 </div>
 
 <div class="stats">
@@ -28,6 +29,42 @@
         <div class="stat-number">{{ stats.available_spots }}</div>
         <div class="stat-label">Available</div>
     </div>
+    <div class="stat-card">
+        <div class="stat-number">{{ stats.active_reservations }}</div>
+        <div class="stat-label">Active Reservations</div>
+    </div>
 </div>
 
+<div style="margin-top: 30px;">
+    <h3>Quick Actions</h3>
+    <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+        <a href="{{ url_for('admin_lots') }}" class="btn">Manage Parking Lots</a>
+        <a href="{{ url_for('admin_add_lot') }}" class="btn">Add New Lot</a>
+        <a href="{{ url_for('admin_users') }}" class="btn">View All Users</a>
+    </div>
+</div>
+
+{% if recent_lots %}
+<div style="margin-top: 30px;">
+    <h3>Recent Parking Lots</h3>
+    <div style="background: #f8f9fa; padding: 15px; border-radius: 8px;">
+        {% for lot in recent_lots %}
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #dee2e6;">
+            <div>
+                <strong>{{ lot.prime_location_name }}</strong><br>
+                <small>{{ lot.address }} | ₹{{ lot.price_per_hour }}/hour</small>
+            </div>
+            <div style="text-align: center;">
+                <span style="color: #28a745;">{{ lot.available_spots or 0 }}</span> / 
+                <span style="color: #6c757d;">{{ lot.total_spots or 0 }}</span> spots<br>
+                <small>Available / Total</small>
+            </div>
+            <div>
+                <a href="{{ url_for('admin_view_lot', lot_id=lot.id) }}" class="btn" style="padding: 5px 10px; font-size: 0.8em;">View</a>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
 {% endblock %}

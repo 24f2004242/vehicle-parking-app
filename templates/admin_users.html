@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block title %}Manage Users - Admin{% endblock %}
+
+{% block content %}
+<div class="header">
+    <h1>Registered Users</h1>
+    <p>View all registered users and their activity</p>
+</div>
+
+{% if users %}
+<div style="overflow-x: auto;">
+    <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
+        <thead>
+            <tr style="background: #f8f9fa;">
+                <th style="padding: 12px; text-align: left; border: 1px solid #dee2e6;">Username</th>
+                <th style="padding: 12px; text-align: left; border: 1px solid #dee2e6;">Full Name</th>
+                <th style="padding: 12px; text-align: left; border: 1px solid #dee2e6;">Email</th>
+                <th style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">Total Reservations</th>
+                <th style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">Active</th>
+                <th style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">Joined</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for user in users %}
+            <tr>
+                <td style="padding: 12px; border: 1px solid #dee2e6;">
+                    <strong>{{ user.username }}</strong>
+                </td>
+                <td style="padding: 12px; border: 1px solid #dee2e6;">
+                    {{ user.full_name }}
+                </td>
+                <td style="padding: 12px; border: 1px solid #dee2e6;">
+                    {{ user.email }}
+                </td>
+                <td style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">
+                    {{ user.total_reservations or 0 }}
+                </td>
+                <td style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">
+                    {% if user.active_reservations > 0 %}
+                        <span style="color: #28a745; font-weight: bold;">{{ user.active_reservations }}</span>
+                    {% else %}
+                        <span style="color: #6c757d;">None</span>
+                    {% endif %}
+                </td>
+                <td style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">
+                    <small>{{ user.created_at[:10] }}</small>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div style="text-align: center; padding: 40px; background: #f8f9fa; border-radius: 8px; margin-top: 20px;">
+    <h3>No Users Found</h3>
+    <p>No users have registered yet.</p>
+</div>
+{% endif %}
+
+<div style="margin-top: 20px;">
+    <a href="{{ url_for('admin_dashboard') }}" class="btn">Back to Dashboard</a>
+</div>
+{% endblock %}

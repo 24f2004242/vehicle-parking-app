@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+
+{% block title %}View Parking Lot - Admin{% endblock %}
+
+{% block content %}
+<style>
+.spot-card {
+    border-radius: 8px;
+    padding: 15px;
+    border: 2px solid;
+    margin-bottom: 15px;
+}
+
+.spot-occupied {
+    border-color: #dc3545;
+    background: #fff5f5;
+}
+
+.spot-available {
+    border-color: #28a745;
+    background: #f0fff4;
+}
+
+.spot-title {
+    text-align: center;
+    margin-bottom: 10px;
+    font-size: 1.2em;
+    font-weight: bold;
+}
+
+.spot-status {
+    text-align: center;
+    margin-bottom: 10px;
+}
+
+.status-badge {
+    color: white;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.9em;
+}
+
+.status-occupied {
+    background: #dc3545;
+}
+
+.status-available {
+    background: #28a745;
+}
+</style>
+
+<div class="header">
+    <h1>{{ lot.prime_location_name }}</h1>
+    <div style="display: flex; gap: 10px; justify-content: center; margin-top: 10px;">
+        <a href="{{ url_for('admin_edit_lot', lot_id=lot.id) }}" class="btn">Edit Lot</a>
+        <a href="{{ url_for('admin_lots') }}" class="btn" style="background: #6c757d;">Back to Lots</a>
+    </div>
+</div>
+
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 30px;">
+    <div style="background: #f8f9fa; padding: 20px; border-radius: 8px;">
+        <h3>Lot Information</h3>
+        <p><strong>Address:</strong> {{ lot.address }}</p>
+        <p><strong>PIN Code:</strong> {{ lot.pin_code }}</p>
+        <p><strong>Price per Hour:</strong> ₹{{ lot.price_per_hour }}</p>
+        <p><strong>Maximum Spots:</strong> {{ lot.maximum_spots }}</p>
+        <p><strong>Created:</strong> {{ lot.created_at }}</p>
+    </div>
+    
+    <div style="background: #e9ecef; padding: 20px; border-radius: 8px;">
+        <h3>Current Status</h3>
+        {% set total_spots = spots|length %}
+        {% set occupied_spots = spots|selectattr('status', 'equalto', 'O')|list|length %}
+        {% set available_spots = total_spots - occupied_spots %}
+        
+        <p><strong>Total Spots:</strong> {{ total_spots }}</p>
+        <p><strong>Occupied:</strong> <span style="color: #dc3545;">{{ occupied_spots }}</span></p>
+        <p><strong>Available:</strong> <span style="color: #28a745;">{{ available_spots }}</span></p>
+        <p><strong>Occupancy Rate:</strong> 
+            {% if total_spots > 0 %}
+                {{ "%.1f"|format((occupied_spots / total_spots) * 100) }}%
+            {% else %}
+                0%
+            {% endif %}
+        </p>
+    </div>
+</div>
+
+<h3>Parking Spots Status</h3>
+<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 15px; margin-top: 20px;">
+    {% for spot in spots %}
+    <div class="spot-card {{ 'spot-occupied' if spot.status == 'O' else 'spot-available' }}">
+        <div class="spot-title">
+            Spot #{{ spot.id }}
+        </div>
+        
+        <div class="spot-status">
+            <span class="status-badge {{ 'status-occupied' if spot.status == 'O' else 'status-available' }}">
+                {{ 'OCCUPIED' if spot.status == 'O' else 'AVAILABLE' }}
+            </span>
+        </div>
+        
+        {% if spot.status == 'O' and spot.username %}
+        <div style="font-size: 0.9em; color: #666;">
+            <p><strong>User:</strong> {{ spot.full_name }}</p>
+            <p><strong>Username:</strong> {{ spot.username }}</p>
+            {% if spot.parking_timestamp %}
+            <p><strong>Parked Since:</strong><br>{{ spot.parking_timestamp }}</p>
+            {% endif %}
+            <p><strong>Status:</strong> {{ spot.reservation_status|title }}</p>
+        </div>
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+
+{% if not spots %}
+<div style="text-align: center; padding: 40px; background: #f8f9fa; border-radius: 8px; margin-top: 20px;">
+    <h3>No Parking Spots</h3>
+    <p>This parking lot has no spots configured.</p>
+</div>
+{% endif %}
+{% endblock %}

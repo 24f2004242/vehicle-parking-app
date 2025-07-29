@@ -174,6 +174,160 @@ def require_user():
         return redirect(url_for('login'))
     return None
 
+def create_parking_lot(location_name, address, pin_code, price_per_hour, max_spots):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute('''
+            INSERT INTO parking_lots (prime_location_name, address, pin_code, price_per_hour, maximum_spots)
+            VALUES (?,?,?,?,?)
+        ''', (location_name, address, pin_code, price_per_hour, max_spots))
+
+        lot_id = cursor.lastrowid
+
+        for i in range(max_spots):
+            cursor.execute('''
+                ISNERT INTO parking_spots (lot_id, status)
+                VALUES (?, 'A')
+            ''', (lot_id, ))
+
+        conn.commit()
+        conn.close()
+        return lot_id
+    except Exception as e:
+        conn.close()
+        return None
+    
+def update_parking_lot(lot_id, location_name, address, pin_code, price_per_hour, max_spots):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute('''
+            SELECT COUNT(*) FROM parking_spots
+            WHERE lot_id = ?
+        ''', (lot_id, ))
+        current_spots = cursor.fetchone()[0]
+
+        cursor.execute('''
+            UPDATE parking_lots
+            SET prime_location_name = ?, address = ?, pin_code = ?, price_per_hour = ?, maximum_spots = ?
+            WHERE id = ?
+        ''', (location_name, address, pin_code, price_per_hour, max_spots, lot_id))
+
+        if max_spots > current_spots:
+            for i in range(max_spots - current_spots):
+                cursor.execute('''
+                    INSERT INTO parking_spots (lot_id, status)
+                    VALUES (?, 'A')
+                ''', (lot_id, ))
+        elif max_spots < current_spots:
+            cursor.execute('''
+                DELETE FROM parking_spots
+                WHERE lot_id = ? AND status = 'A'
+                LIMIT ?
+            ''', (lot_id, current_spots - max_spots))
+
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        conn.close()
+        return False
+    
+def delete_parking_lot(lot_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute('''
+            SELECT COUNT(*) FROM parking_spots
+            WHERE lot_id = ? AND status = '0'          
+        ''', (lot_id, ))
+        occupied_spots = cursor.fetchone()[0]
+
+        if occupied_spots >0:
+            conn.close()
+            return False, "Cannot delete lot with occupied spots"
+        
+        cursor.execute('''
+            DELETE FROM parking_spots
+            WHERE lot_id = ?
+        ''', (lot_id, ))
+
+        conn.commit()
+        conn.close()
+        return True, "Parking lot deleted success"
+    except Exception as e:
+        conn.close()
+        return False, f"Error deleting parking lot: {str(e)}"
+    
+def get_all_parking_lots():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT pl.*,
+            COUNT(ps.id) as total_spots,
+            SUM(CASE WHEN ps.status = 'A' THEN 1 ELSE 0 END) as available_spots,
+            SUM(CASE WHEN ps.status = 'O' THEN 1 ELSE 0 END) as occupied_spots
+        FROM parking_lots pl
+        LEFT JOIN parking_spots ps ON pl.id = ps.lot_id
+        GROUP BY pl.id
+        ORDER BY pl.created_at DESC
+    ''')
+
+    lots = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return lots
+
+def get_parking_lot_details(lot_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT * FROM parking_lots
+        WHERE id = ?
+    ''', (lot_id, ))
+    lot = cursor.fetchone()
+
+    if not lot:
+        conn.close()
+        return None, []
+    
+    cursor.execute('''
+        SELECT ps.*, r.user_id, u.username, u.full_name, r.parking_timestamp, r.status as reservation_status
+        FROM parking_spots ps
+        LEFT JOIN reservations r ON ps.id = r.spot_id AND r.status IN ('reserved', 'occupied')
+        LEFT JOIN users u on r.user_id = u.id
+        WHERE ps.lot_id = ?
+        ORDER BY ps.id
+    ''', (lot_id, ))
+
+    spots = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+
+    return dict(lot), spots
+
+def get_all_users():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT u.*, 
+            COUNT(r.id) as total_reservations,
+            COUNT(CASE WHEN r.status IN ('reserved', 'occupied') THEN 1 END) as active_reservations
+        FROM users u
+        LEFT JOIN reservations r ON u.id = r.user_id
+        GROUP BY u.id
+        ORDER BY u.created_at DESC
+    ''')
+
+    users = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return users
+
 # Routes
 @app.route('/')
 def index():
@@ -235,6 +389,13 @@ def register():
 
     return render_template('register.html')
 
+@app.route('/logout')
+def logout():
+    session.clear()
+    flash('You have been logged out successfully', 'success')
+    return redirect(url_for('login'))
+
+
 @app.route('/admin_dashboard')
 def admin_dashboard():
     auth_check = require_admin()
@@ -256,6 +417,10 @@ def admin_dashboard():
     cursor.execute("SELECT COUNT(*) FROM parking_spots WHERE status = 'O'")
     occupied_spots = cursor.fetchone()[0]
 
+    cursor.execute("SELECT COUNT(*) FROM reservations WHERE status IN ('reserved', 'occupied')")
+    active_reservations = cursor.fetchone()[0]
+
+
     conn.close()
 
     stats = {
@@ -263,10 +428,117 @@ def admin_dashboard():
         'total_lots': total_lots,
         'total_spots': total_spots,
         'occupied_spots': occupied_spots,
-        'available_spots': total_spots - occupied_spots
+        'available_spots': total_spots - occupied_spots,
+        'active_reservations': active_reservations
     }
 
+    recent_lots = get_all_parking_lots()[:5]
+
     return render_template('admin_dashboard.html', stats=stats)
+
+@app.route('/admin/lots')
+def admin_lots():
+    auth_check = require_admin()
+    if auth_check:
+        return auth_check
+    
+    lots = get_all_parking_lots()
+    return render_template('admin_lots.html', lots=lots)
+
+@app.route('/admin/lots/add', methods=['GET', 'POST'])
+def admin_add_lot():
+    auth_check = require_admin()
+    if auth_check:
+        return auth_check
+    
+    if request.method == 'POST':
+        location_name = request.form['location_name']
+        address = request.form['address']
+        pin_code = request.form['pin_code']
+        price_per_hour = float(request.form['price_per_hour'])
+        max_spots = int(request.form['max_spots'])
+        
+        if max_spots <= 0:
+            flash('Maximum spots must be greater than 0!', 'error')
+        elif price_per_hour <= 0:
+            flash('Price per hour must be greater than 0!', 'error')
+        else:
+            lot_id = create_parking_lot(location_name, address, pin_code, price_per_hour, max_spots)
+            if lot_id:
+                flash(f'Parking lot created successfully with {max_spots} spots!', 'success')
+                return redirect(url_for('admin_lots'))
+            else:
+                flash('Error creating parking lot!', 'error')
+
+    return render_template('admin_add_lot.html')
+
+@app.route('/admin/lots/edit/<int:lot_id>', methods=['GET', 'POST'])
+def admin_edit_lot(lot_id):
+    auth_check = require_admin()
+    if auth_check:
+        return auth_check
+    
+    if request.method == 'POST':
+        location_name = request.form['location_name']
+        address = request.form['address']
+        pin_code = request.form['pin_code']
+        price_per_hour = float(request.form['price_per_hour'])
+        max_spots = int(request.form['max_spots'])
+        
+        if max_spots <= 0:
+            flash('Maximum spots must be greater than 0!', 'error')
+        elif price_per_hour <= 0:
+            flash('Price per hour must be greater than 0!', 'error')
+        else:
+            if update_parking_lot(lot_id, location_name, address, pin_code, price_per_hour, max_spots):
+                flash('Parking lot updated successfully!', 'success')
+                return redirect(url_for('admin_lots'))
+            else:
+                flash('Error updating parking lot!', 'error')
+    
+    # Get current lot details
+    lot, spots = get_parking_lot_details(lot_id)
+    if not lot:
+        flash('Parking lot not found!', 'error')
+        return redirect(url_for('admin_lots'))
+    
+    return render_template('admin_edit_lot.html', lot=lot)
+
+@app.route('/admin/lots/delete/<int:lot_id>')
+def admin_delete_lot(lot_id):
+    auth_check = require_admin()
+    if auth_check:
+        return auth_check
+    
+    success, message = delete_parking_lot(lot_id)
+
+    if success:
+        flash(message, 'success')
+    else:
+        flash(message, 'error')
+
+    return redirect(url_for('admin_lots'))
+
+@app.route('/admin/lots/view/<int:lot_id>')
+def admin_view_lot(lot_id):
+    auth_check = require_admin()
+    if auth_check:
+        return auth_check
+    
+    lot, spots = get_parking_lot_details(lot_id)
+    if not lot:
+        flash('Parking lot not found!', 'error')
+        return redirect(url_for('admin_lots'))
+    
+@app.route('/admin/users')
+def admin_users():
+    auth_check = require_admin()
+    if auth_check:
+        return auth_check
+    
+    users = get_all_users()
+    return render_template('admin_users.html', users=users)
+
 
 @app.route('/user_dashboard')
 def user_dashboard():
@@ -301,9 +573,4 @@ def user_dashboard():
 
     return render_template('user_dashboard.html', active_reservations=active_reservations, available_lots=available_lots)
 
-@app.route('/logout')
-def logout():
-    session.clear()
-    flash('You have been logged out successfully', 'success')
-    return redirect(url_for('login'))
 

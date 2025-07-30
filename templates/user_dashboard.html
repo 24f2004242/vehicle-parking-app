@@ -3,34 +3,337 @@
 {% block title %}User Dashboard - Vehicle Parking App{% endblock %}
 
 {% block content %}
+<style>
+/* Reservation Cards */
+.reservation-card {
+    padding: 20px;
+    margin: 15px 0;
+    border-radius: 8px;
+    border: 1px solid;
+}
+
+.reservation-reserved {
+    background: #fff3cd;
+    border-color: #ffeaa7;
+}
+
+.reservation-occupied {
+    background: #d4edda;
+    border-color: #c3e6cb;
+}
+
+.reservation-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+.reservation-title {
+    margin: 0;
+    color: #333;
+}
+
+.reservation-spot {
+    margin: 5px 0;
+    color: #666;
+}
+
+.status-badge {
+    color: white;
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 0.9em;
+    font-weight: bold;
+}
+
+.status-reserved {
+    background: #ffc107;
+}
+
+.status-occupied {
+    background: #28a745;
+}
+
+/* Availability Indicators */
+.availability-indicator {
+    background: #e9ecef;
+    border-radius: 4px;
+    padding: 10px;
+    margin-bottom: 15px;
+}
+
+.availability-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.availability-text {
+    font-size: 0.9em;
+}
+
+.availability-status {
+    font-weight: bold;
+}
+
+.availability-high {
+    color: #28a745;
+}
+
+.availability-limited {
+    color: #ffc107;
+}
+
+.availability-full {
+    color: #dc3545;
+}
+
+.progress-bar {
+    background: #dee2e6;
+    height: 8px;
+    border-radius: 4px;
+    margin-top: 8px;
+    overflow: hidden;
+}
+
+.progress-fill {
+    height: 100%;
+    transition: width 0.3s ease;
+}
+
+.progress-high {
+    background: #28a745;
+}
+
+.progress-limited {
+    background: #ffc107;
+}
+
+.progress-full {
+    background: #dc3545;
+}
+
+.reservation-details {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin-bottom: 15px;
+}
+
+.reservation-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.progress-bar {
+    background: #dee2e6;
+    height: 8px;
+    border-radius: 4px;
+    margin-top: 8px;
+    overflow: hidden;
+    --occupancy: 0%;
+}
+
+.progress-fill {
+    height: 100%;
+    width: var(--occupancy);
+    transition: width 0.3s ease;
+}
+</style>
+
 <div class="header">
-    <h1>User Dashboard</h1>
+    <h1>Welcome, {{ session.user_fullname }}!</h1>
+    <p>Manage your parking reservations</p>
 </div>
 
-<h3>Your Active Reservations</h3>
-{% if active_reservations %}
-    {% for reservation in active_reservations %}
-    <div style="background: #f8f9fa; padding: 15px; margin: 10px 0; border-radius: 4px;">
-        <strong>{{ reservation.prime_location_name }}</strong><br>
-        Spot #{{ reservation.spot_number }} | Status: {{ reservation.status }}<br>
-        Price: ₹{{ reservation.price_per_hour }}/hour
+<!-- Quick Stats -->
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 30px;">
+    <div class="stat-card">
+        <div class="stat-number">{{ active_reservations|length }}</div>
+        <div class="stat-label">Active Reservations</div>
     </div>
-    {% endfor %}
-{% else %}
-    <p>No active reservations.</p>
-{% endif %}
+    <div class="stat-card">
+        <div class="stat-number">{{ available_lots|length }}</div>
+        <div class="stat-label">Available Lots</div>
+    </div>
+</div>
 
-<h3>Available Parking Lots</h3>
-{% if available_lots %}
-    {% for lot in available_lots %}
-    <div style="background: #e9ecef; padding: 15px; margin: 10px 0; border-radius: 4px;">
-        <strong>{{ lot.prime_location_name }}</strong><br>
-        {{ lot.address }}, {{ lot.pin_code }}<br>
-        Price: ₹{{ lot.price_per_hour }}/hour | Available Spots: {{ lot.available_spots }}/{{ lot.total_spots }}<br>
-        <em>Booking features will be available in Milestone 4</em>
+<!-- Active Reservations Section -->
+<div style="margin-bottom: 40px;">
+    <h3>Your Active Reservations</h3>
+    {% if active_reservations %}
+        {% for reservation in active_reservations %}
+        <div class="reservation-card {{ 'reservation-reserved' if reservation.status == 'reserved' else 'reservation-occupied' }}">
+            
+            <!-- Reservation Header -->
+            <div class="reservation-header">
+                <div>
+                    <h4 class="reservation-title">{{ reservation.prime_location_name }}</h4>
+                    <p class="reservation-spot">Spot #{{ reservation.spot_number }}</p>
+                </div>
+                <div style="text-align: right;">
+                    <span class="status-badge {{ 'status-reserved' if reservation.status == 'reserved' else 'status-occupied' }}">
+                        {{ reservation.status.upper() }}
+                    </span>
+                </div>
+            </div>
+            
+            <!-- Reservation Details -->
+            <div class="reservation-details">
+                <div>
+                    <p style="margin: 5px 0;"><strong>Address:</strong> {{ reservation.address }}</p>
+                    <p style="margin: 5px 0;"><strong>Price:</strong> ₹{{ reservation.price_per_hour }}/hour</p>
+                    <p style="margin: 5px 0;"><strong>Reserved:</strong> {{ reservation.created_at }}</p>
+                </div>
+                <div>
+                    {% if reservation.parking_timestamp %}
+                        <p style="margin: 5px 0;"><strong>Parking Started:</strong> {{ reservation.parking_timestamp }}</p>
+                    {% endif %}
+                    {% if reservation.status == 'occupied' %}
+                        <p style="margin: 5px 0; color: #28a745;"><strong>Status:</strong> Currently Parked</p>
+                    {% elif reservation.status == 'reserved' %}
+                        <p style="margin: 5px 0; color: #ffc107;"><strong>Status:</strong> Reserved - Please arrive to start parking</p>
+                    {% endif %}
+                </div>
+            </div>
+            
+            <!-- Action Buttons -->
+            <div class="reservation-actions">
+                {% if reservation.status == 'reserved' %}
+                    <a href="{{ url_for('user_start_parking', reservation_id=reservation.id) }}" 
+                       class="btn" style="background: #28a745;">
+                        Start Parking
+                    </a>
+                    <a href="{{ url_for('user_cancel_reservation', reservation_id=reservation.id) }}" 
+                       class="btn btn-danger"
+                       onclick="return confirm('Are you sure you want to cancel this reservation?')">
+                        Cancel Reservation
+                    </a>
+                {% elif reservation.status == 'occupied' %}
+                    <a href="{{ url_for('user_end_parking', reservation_id=reservation.id) }}" 
+                       class="btn" style="background: #dc3545;"
+                       onclick="return confirm('Are you sure you want to end parking and checkout?')">
+                        End Parking & Checkout
+                    </a>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    {% else %}
+        <div style="text-align: center; padding: 30px; background: #f8f9fa; border-radius: 8px;">
+            <h4>No Active Reservations</h4>
+            <p>You don't have any active parking reservations.</p>
+        </div>
+    {% endif %}
+</div>
+
+<!-- Available Parking Lots Section -->
+<div>
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h3>Available Parking Lots</h3>
+        <div>
+            <a href="{{ url_for('user_summary') }}" class="btn" style="background: #17a2b8; margin-right: 10px;">View Summary</a>
+            <a href="{{ url_for('user_history') }}" class="btn" style="background: #6c757d;">View History</a>
+        </div>
     </div>
-    {% endfor %}
-{% else %}
-    <p>No available parking lots at the moment.</p>
-{% endif %}
+    
+    {% if available_lots %}
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 20px;">
+            {% for lot in available_lots %}
+            <div style="background: #ffffff; border: 1px solid #dee2e6; border-radius: 8px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                
+                <!-- Lot Header -->
+                <div style="margin-bottom: 15px;">
+                    <h4 style="margin: 0 0 5px 0; color: #333;">{{ lot.prime_location_name }}</h4>
+                    <p style="margin: 0; color: #666; font-size: 0.9em;">{{ lot.address }}</p>
+                    <p style="margin: 5px 0 0 0; color: #666; font-size: 0.9em;">PIN: {{ lot.pin_code }}</p>
+                </div>
+                
+                <!-- Lot Details -->
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
+                    <div>
+                        <p style="margin: 5px 0;"><strong>Price:</strong> ₹{{ lot.price_per_hour }}/hour</p>
+                        <p style="margin: 5px 0;"><strong>Total Spots:</strong> {{ lot.total_spots }}</p>
+                    </div>
+                    <div>
+                        <p style="margin: 5px 0;"><strong>Available:</strong> 
+                            <span style="color: #28a745; font-weight: bold;">{{ lot.available_spots }}</span>
+                        </p>
+                        <p style="margin: 5px 0;"><strong>Occupied:</strong> 
+                            <span style="color: #dc3545;">{{ lot.occupied_spots }}</span>
+                        </p>
+                    </div>
+                </div>
+                
+                <!-- Availability Indicator -->
+                <div class="availability-indicator">
+                    <div class="availability-header">
+                        <span class="availability-text">Availability:</span>
+                        {% if lot.available_spots > 5 %}
+                            <span class="availability-status availability-high">
+                                High ({{ lot.available_spots }} spots)
+                            </span>
+                        {% elif lot.available_spots > 0 %}
+                            <span class="availability-status availability-limited">
+                                Limited ({{ lot.available_spots }} spots)
+                            </span>
+                        {% else %}
+                            <span class="availability-status availability-full">
+                                Full
+                            </span>
+                        {% endif %}
+                    </div>
+                    <!-- Progress bar -->
+                    {% set occupancy_percentage = ((lot.total_spots - lot.available_spots) / lot.total_spots * 100) if lot.total_spots > 0 else 0 %}
+                    <div class="progress-bar" style="--occupancy: {{ occupancy_percentage }}%;">
+                        {% if lot.available_spots > 5 %}
+                            <div class="progress-fill progress-high"></div>
+                        {% elif lot.available_spots > 0 %}
+                            <div class="progress-fill progress-limited"></div>
+                        {% else %}
+                            <div class="progress-fill progress-full"></div>
+                        {% endif %}
+                    </div>
+                </div>
+                
+                <!-- Reserve Button -->
+                {% if lot.available_spots > 0 %}
+                    <a href="{{ url_for('user_reserve_spot', lot_id=lot.id) }}" 
+                       class="btn" 
+                       style="width: 100%; text-align: center; background: #007bff;"
+                       onclick="return confirm('Reserve a parking spot at {{ lot.prime_location_name }}?')">
+                        Reserve Spot (Auto-Assigned)
+                    </a>
+                {% else %}
+                    <button class="btn" style="width: 100%; background: #6c757d; cursor: not-allowed;" disabled>
+                        Fully Occupied
+                    </button>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div style="text-align: center; padding: 40px; background: #f8f9fa; border-radius: 8px;">
+            <h4>No Available Parking Lots</h4>
+            <p>All parking lots are currently full. Please check back later.</p>
+            <button onclick="location.reload()" class="btn">Refresh Page</button>
+        </div>
+    {% endif %}
+</div>
+
+<!-- Instructions -->
+<div style="margin-top: 40px; padding: 20px; background: #e9ecef; border-radius: 8px;">
+    <h4>How it works:</h4>
+    <ol style="margin: 10px 0;">
+        <li><strong>Reserve:</strong> Click "Reserve Spot" to automatically get assigned the next available parking spot</li>
+        <li><strong>Arrive:</strong> Go to the parking lot and click "Start Parking" when you arrive</li>
+        <li><strong>Park:</strong> Park your vehicle in the assigned spot</li>
+        <li><strong>Leave:</strong> When leaving, click "End Parking & Checkout" to calculate your bill</li>
+    </ol>
+    <p style="margin: 10px 0; font-size: 0.9em; color: #666;">
+        <strong>Note:</strong> You can only have one active reservation at a time. Minimum billing is 1 hour.
+    </p>
+</div>
 {% endblock %}

@@ -1,0 +1,216 @@
+{% extends "base.html" %}
+
+{% block title %}Parking History - User Dashboard{% endblock %}
+
+{% block content %}
+<style>
+/* Status badges */
+.status-badge {
+    color: white;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 0.8em;
+}
+
+.status-completed {
+    background: #28a745;
+}
+
+.status-occupied {
+    background: #ffc107;
+}
+
+.status-reserved {
+    background: #17a2b8;
+}
+
+.status-cancelled {
+    background: #6c757d;
+}
+
+/* Recent activity cards */
+.activity-card {
+    padding: 15px;
+    margin: 10px 0;
+    border-radius: 0 4px 4px 0;
+    border-left: 4px solid;
+}
+
+.activity-completed {
+    background: #f8f9fa;
+    border-left-color: #28a745;
+}
+
+.activity-occupied {
+    background: #fff3cd;
+    border-left-color: #ffc107;
+}
+
+.activity-reserved {
+    background: #d1ecf1;
+    border-left-color: #17a2b8;
+}
+
+.activity-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.activity-status-text {
+    font-weight: bold;
+}
+
+.activity-status-completed {
+    color: #28a745;
+}
+
+.activity-status-occupied {
+    color: #ffc107;
+}
+
+.activity-status-reserved {
+    color: #17a2b8;
+}
+</style>
+
+<div class="header">
+    <h1>Your Parking History</h1>
+    <p>Complete record of your parking sessions</p>
+</div>
+
+<div style="margin-bottom: 20px;">
+    <a href="{{ url_for('user_dashboard') }}" class="btn">Back to Dashboard</a>
+</div>
+
+{% if reservations %}
+    <!-- Summary Stats -->
+    {% set completed_reservations = reservations|selectattr('status', 'equalto', 'completed')|list %}
+    {% set total_cost = completed_reservations|sum(attribute='parking_cost') %}
+    {% set total_sessions = completed_reservations|length %}
+    
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin-bottom: 30px;">
+        <div class="stat-card">
+            <div class="stat-number">{{ reservations|length }}</div>
+            <div class="stat-label">Total Reservations</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number">{{ total_sessions }}</div>
+            <div class="stat-label">Completed Sessions</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number">₹{{ "%.2f"|format(total_cost or 0) }}</div>
+            <div class="stat-label">Total Spent</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number">{{ (reservations|selectattr('status', 'in', ['reserved', 'occupied'])|list)|length }}</div>
+            <div class="stat-label">Active</div>
+        </div>
+    </div>
+
+    <!-- Reservations History -->
+    <h3>All Reservations</h3>
+    <div style="overflow-x: auto;">
+        <table style="width: 100%; border-collapse: collapse; margin-top: 15px;">
+            <thead>
+                <tr style="background: #f8f9fa;">
+                    <th style="padding: 12px; text-align: left; border: 1px solid #dee2e6;">Location</th>
+                    <th style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">Spot</th>
+                    <th style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">Status</th>
+                    <th style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">Reserved</th>
+                    <th style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">Duration</th>
+                    <th style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">Cost</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for reservation in reservations %}
+                <tr style="border-bottom: 1px solid #dee2e6;">
+                    <td style="padding: 12px; border: 1px solid #dee2e6;">
+                        <strong>{{ reservation.prime_location_name }}</strong><br>
+                        <small style="color: #666;">₹{{ reservation.price_per_hour }}/hour</small>
+                    </td>
+                    <td style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">
+                        #{{ reservation.spot_number }}
+                    </td>
+                    <td style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">
+                        {% if reservation.status == 'completed' %}
+                            <span class="status-badge status-completed">COMPLETED</span>
+                        {% elif reservation.status == 'occupied' %}
+                            <span class="status-badge status-occupied">OCCUPIED</span>
+                        {% elif reservation.status == 'reserved' %}
+                            <span class="status-badge status-reserved">RESERVED</span>
+                        {% else %}
+                            <span class="status-badge status-cancelled">{{ reservation.status.upper() }}</span>
+                        {% endif %}
+                    </td>
+                    <td style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">
+                        <small>{{ reservation.created_at[:16] }}</small>
+                    </td>
+                    <td style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">
+                        {% if reservation.parking_timestamp and reservation.leaving_timestamp %}
+                            {% set start_time = reservation.parking_timestamp %}
+                            {% set end_time = reservation.leaving_timestamp %}
+                            <small>{{ start_time[:16] }}<br>to<br>{{ end_time[:16] }}</small>
+                        {% elif reservation.parking_timestamp %}
+                            <small>Started: {{ reservation.parking_timestamp[:16] }}</small>
+                        {% else %}
+                            <small style="color: #666;">Not started</small>
+                        {% endif %}
+                    </td>
+                    <td style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">
+                        {% if reservation.parking_cost %}
+                            <strong style="color: #28a745;">₹{{ "%.2f"|format(reservation.parking_cost) }}</strong>
+                        {% else %}
+                            <span style="color: #666;">-</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    
+    <!-- Recent Activity -->
+    {% set recent_reservations = reservations[:5] %}
+    {% if recent_reservations %}
+    <div style="margin-top: 40px;">
+        <h3>Recent Activity</h3>
+        {% for reservation in recent_reservations %}
+        {% if reservation.status == 'completed' %}
+            <div class="activity-card activity-completed">
+        {% elif reservation.status == 'occupied' %}
+            <div class="activity-card activity-occupied">
+        {% else %}
+            <div class="activity-card activity-reserved">
+        {% endif %}
+            <div class="activity-header">
+                <div>
+                    <strong>{{ reservation.prime_location_name }}</strong> - Spot #{{ reservation.spot_number }}<br>
+                    <small>{{ reservation.created_at }}</small>
+                </div>
+                <div style="text-align: right;">
+                    {% if reservation.status == 'completed' %}
+                        <span class="activity-status-text activity-status-completed">COMPLETED</span>
+                    {% elif reservation.status == 'occupied' %}
+                        <span class="activity-status-text activity-status-occupied">OCCUPIED</span>
+                    {% else %}
+                        <span class="activity-status-text activity-status-reserved">{{ reservation.status.upper() }}</span>
+                    {% endif %}
+                    {% if reservation.parking_cost %}
+                        <br><strong>₹{{ "%.2f"|format(reservation.parking_cost) }}</strong>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+{% else %}
+    <div style="text-align: center; padding: 40px; background: #f8f9fa; border-radius: 8px;">
+        <h3>No Parking History</h3>
+        <p>You haven't made any parking reservations yet.</p>
+        <a href="{{ url_for('user_dashboard') }}" class="btn">Find Parking</a>
+    </div>
+{% endif %}
+{% endblock %}

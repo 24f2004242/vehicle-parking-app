@@ -263,6 +263,214 @@ def delete_parking_lot(lot_id):
         conn.close()
         return False, f"Error deleting parking lot: {str(e)}"
     
+def get_available_parking_lots():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT pl.*,
+            COUNT(ps.id) as total spots,
+            SUM(CASE WHEN ps.status = 'A' THEN 1 ELSE 0 END) as available_spots,
+            SUM(CASE WHEN ps.status = 'O' THEN 1 ELSE 0 END) as occupied_spots
+        FROM parking_lots pl
+        LEFT JOIN parking_spots on pl.id = ps.lot_id
+        GROUP BY pl.id
+        HAVING available_spots > 0
+        ORDER BY available_spots DESC, pl.price_per_hour ASC
+    ''')
+    
+    lots = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return lots
+
+def reserve_parking_spot(user_id, lot_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute('''
+            SELECT id FROM parking_spots
+            WHERE lot_id = ? AND status = 'A'
+            ORDER BY id ASC
+            LIMIT 1
+        ''', (lot_id, ))
+
+        spot = cursor.fetchone()
+        if not spot:
+            conn.close()
+            return None, "No available spots in this parking lot"
+        
+        spot_id = spot[0]
+
+        cursor.execute('''
+            SELECT COUNT(*) FROM reservations
+            WHERE user_id = ? AND status IN ('reserved', 'occupied')
+        ''', (user_id, ))
+
+        active_count = cursor.fetchone()[0]
+        if active_count > 0:
+            conn.close()
+            return None, "You already have an active reservation"
+        
+        cursor.execute('''
+            INSERT INTO reservations (spot_id, user_id, status, created_at)
+            VALUES (?, ?, 'reserved', CURRENT_TIMESTAMP)
+        ''', (spot_id, user_id))
+
+        reservation_id = cursor.lastrowid
+
+        cursor.execute('''
+            UPDATE parking_spots SET status = '0' WHERE id = ?
+        ''', (spot_id, ))
+
+        conn.commit()
+        conn.close()
+
+        return reservation_id, "Parking spot reserved successfully"
+    except Exception as e:
+        conn.close()
+        return None, f"Error reserved spot: {str(e)}"
+    
+def start_parking(reservation_id, user_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute('''
+            SELECT * FROM reservations
+            WHERE id = ? AND user_id = ? AND status = 'reserved'
+        ''', (reservation_id, user_id))
+
+        reservation = cursor.fetchone()
+        if not reservation:
+            conn.close()
+            return False, "invalid reservation or already started"
+        
+        cursor.execute('''
+            UPDATE reservations
+            SET status = 'occupied', parking_timestamp = CURRENT_TIMESTAMP
+            WHERE id = ?
+        ''', (reservation_id, ))
+
+        conn.commit()
+        conn.close()
+        return True, "Parking staretd successfully"
+    
+    except Exception as e:
+        conn.close()
+        return False, f"Error starting parking: {str(e)}"
+
+def end_parking(reservation_id, user_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute('''
+            SELECT r.*, pl.price_per_hour, ps.lot_id
+            FROM reservations r
+            JOIN parking_spots ps ON r.spot_id = ps.id
+            JOIN parking_lots pl on ps.lot_id = pl.id
+            WHERE r.id = ? AND r.user_id = ? AND r.status = 'occupied'
+        ''', (reservation_id, user_id))
+
+        reservation = cursor.fetchone()
+        if not reservation:
+            conn.close()
+            return False, "Invalid reservation or not currently parked", 0
+        
+        reservation = dict(reservation)
+
+        parking_start = datetime.fromisofformat(reservation['parking_timestamp'])
+        parking_end = datetime.now()
+        duration_hours = (parking_end - parking_start).total_seconds() / 3600
+
+        if duration_hours < 1:
+            billable_hours = 1
+        else:
+            billable_hours = int(duration_hours) + (1 if duration_hours %1 >0 else 0)
+
+        parking_cost = billable_hours * reservation['price_per_hour']
+
+        cursor.execute('''
+            UPDATE reservations
+            SET status = 'completed',
+                leaving_timestamp = CURRENT_TIMESTAMP,
+                parking_cost= ?
+            WHERE id = ?
+        ''', (parking_cost, reservation_id))
+
+        cursor.execute('''
+            UPDATE parking_spots SET status = 'A' WHERE id = ?    
+        ''', (reservation['spot_id']))
+
+        conn.commit()
+        conn.close()
+
+        return True, f"Parking ended. Duration: {duration_hours:.2f} hours, Cost: ₹{parking_cost:.2f}", parking_cost
+
+    except Exception as e:
+        conn.close()
+        return False, f"Error ending parking: {str(e)}"
+    
+def get_user_reservations(user_id, include_completed = False):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    if include_completed:
+        status_filter = ""
+    else:
+        status_filter = "AND r.status IN ('reserved', 'occupied')"
+
+    cursor.execute(f'''
+        SELECT r.*, pl.id as spot_number, pl.prime_location_name, pl.address, pl.price_per_hour
+        FROM reservations r
+        JOIN parking_spots ps ON r.spot_id = ps.id
+        JOIN parking_lots pl ON ps.lot_id = pl.id
+        WHERE r.user_id = ? {status_filter}
+        ORDER BY r.created_at DESC
+    ''', (user_id, ))
+
+    reservations = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return reservations
+
+def cancel_reservation(reservation_id, user_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute('''
+            SELECT spot_id from reservations
+            WHERE id = ? AND user_id = ? AND status = 'reserved'
+        ''', (reservation_id, user_id))
+
+        reservation = cursor.fetchone()
+        if not reservation:
+            conn.close()
+            return False, "Cannot cancel - reservation not found or already in use"
+
+        spot_id = reservation[0]
+
+        cursor.execute('''
+            DELETE FROM reservations
+            WHERE id = ?
+        ''', (reservation_id, ))
+
+        cursor.execute('''
+            UPDATE parking_spots
+            SET status = 'A'
+            WHERE id = ?
+        ''', (spot_id, ))
+
+        conn.commit()
+        conn.close()
+        return True, "Reservation cancelled successfully"
+    
+    except Exception as e:
+        conn.close()
+        return False, f"Error cancelling reservation: {str(e)}"
+    
+
 def get_all_parking_lots():
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -546,31 +754,80 @@ def user_dashboard():
     if auth_check:
         return auth_check
     
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
-    cursor.execute('''
-        SELECT r.*, ps.id as spot_number, pl.prime_location_name, pl.price_per_hour
-        FROM reservations r
-        JOIN parking_spots ps ON r.spot_id = ps.id
-        JOIN parking_lots pl ON ps.lot_id = pl.id
-        WHERE r.user_id = ? and r.status != 'completed'
-        ORDER BY r.created_at DESC
-    ''', (session['user_id'],))
-
-    active_reservations = [dict(row) for row in cursor.fetchall()]
-
-    cursor.execute('''
-        SELECT pl.*, COUNT(ps.id) as total_spots, SUM(CASE WHEN ps.status = 'A' THEN 1 ELSE 0 END) as available_spots
-        FROM parking_lots pl
-        LEFT JOIN parking_spots ps ON pl.id = ps.lot_id
-        GROUP BY pl.id
-        HAVING available_spots > 0
-    ''')
-
-    available_lots = [dict(row) for row in cursor.fetchall()]
-    conn.close()
+    active_reservations = get_user_reservations(session['user_id'], include_completed=False)
+    
+    available_lots = get_available_parking_lots()
 
     return render_template('user_dashboard.html', active_reservations=active_reservations, available_lots=available_lots)
+
+@app.route('/user/reserve/<int:lot_id>')
+def user_reserve_spot(lot_id):
+    auth_check = require_user()
+    if auth_check:
+        return auth_check
+    
+    reservation_id, message = reserve_parking_spot(session['user_id'], lot_id)
+
+    if reservation_id:
+        flash(message, 'success')
+    else:
+        flash(message, 'error')
+
+    return redirect(url_for('user_dashboard'))
+
+@app.route('/user/start_parking/<int:reservation_id>')
+def user_start_parking(reservation_id):
+    auth_check = require_user()
+    if auth_check:
+        return auth_check
+
+    success, message = start_parking(reservation_id, session['user_id'])
+
+    if success:
+        flash(message, 'success')
+    else:
+        flash(message, 'error')
+
+    return redirect(url_for('user_dashboard'))
+
+@app.route('/user/end_parking/<int:reservation_id>')
+def user_end_parking(reservation_id):
+    auth_check = require_user()
+    if auth_check:
+        return auth_check
+    
+    success, message, cost = end_parking(reservation_id, session['user_id'])
+
+    if success:
+        flash(message, 'success')
+    else:
+        flash(message, 'error')
+
+    return redirect(url_for('user_dashboard'))
+
+@app.route('/user/cancel/<int:reservation_id>')
+def user_cancel_reservation(reservation_id):
+    auth_check = require_user()
+    if auth_check:
+        return auth_check
+    
+    success, message = cancel_reservation(reservation_id, session['user_id'])
+
+    if success:
+        flash(message, 'success')
+    else:
+        flash(message, 'error')
+
+    return redirect(url_for('user_dashboard'))
+
+@app.route('/user/history')
+def user_history():
+    auth_check = require_user()
+    if auth_check:
+        return auth_check
+    
+    all_reservations = get_user_reservations(session['user_id'], include_completed=True)
+
+    return render_template(url_for('user_history.html', reservations=all_reservations))
 
 

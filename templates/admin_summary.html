@@ -1,0 +1,369 @@
+{% extends "base.html" %}
+
+{% block title %}Admin Summary - Vehicle Parking System{% endblock %}
+
+{% block content %}
+<style>
+/* Occupancy status colors */
+.occupancy-high {
+    color: #dc3545; /* Red - over 80% */
+}
+
+.occupancy-medium {
+    color: #ffc107; /* Yellow - 50-80% */
+}
+
+.occupancy-low {
+    color: #28a745; /* Green - under 50% */
+}
+
+/* Status badges */
+.status-badge {
+    color: white;
+    padding: 2px 6px;
+    border-radius: 8px;
+    font-size: 0.7em;
+}
+
+.status-completed {
+    background: #28a745;
+}
+
+.status-occupied {
+    background: #ffc107;
+}
+
+.status-reserved {
+    background: #17a2b8;
+}
+
+.status-other {
+    background: #6c757d;
+}
+
+/* Usage progress bars */
+.usage-progress-container {
+    margin-top: 15px;
+}
+
+.usage-progress-bar {
+    background: #e9ecef;
+    height: 8px;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.usage-progress-fill {
+    background: #007bff;
+    height: 100%;
+    transition: width 0.3s ease;
+}
+
+.usage-percentage-text {
+    color: #666;
+    margin-top: 5px;
+    display: block;
+}
+</style>
+
+<div class="header">
+    <h1>System Analytics Dashboard</h1>
+    <p>Comprehensive overview of parking system performance</p>
+</div>
+
+<div style="margin-bottom: 20px;">
+    <a href="{{ url_for('admin_dashboard') }}" class="btn">Back to Dashboard</a>
+    <a href="{{ url_for('admin_lots') }}" class="btn" style="background: #6c757d; margin-left: 10px;">Manage Lots</a>
+</div>
+
+<!-- Key Performance Indicators -->
+<div style="margin-bottom: 40px;">
+    <h3>Key Performance Indicators</h3>
+    <div class="stats">
+        <div class="stat-card">
+            <div class="stat-number">{{ summary.basic_stats.total_users }}</div>
+            <div class="stat-label">Registered Users</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number">{{ summary.basic_stats.total_lots }}</div>
+            <div class="stat-label">Parking Lots</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number">{{ summary.basic_stats.total_spots }}</div>
+            <div class="stat-label">Total Spots</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number">{{ "%.1f"|format(summary.basic_stats.occupancy_rate) }}%</div>
+            <div class="stat-label">Occupancy Rate</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number">{{ summary.basic_stats.completed_reservations }}</div>
+            <div class="stat-label">Completed Sessions</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number">₹{{ "%.2f"|format(summary.basic_stats.total_revenue) }}</div>
+            <div class="stat-label">Total Revenue</div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Activity -->
+<div style="margin-bottom: 40px;">
+    <h3>Recent Activity (Last 7 Days)</h3>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+        <div style="background: #d4edda; padding: 20px; border-radius: 8px; border-left: 4px solid #28a745;">
+            <div style="font-size: 1.5em; font-weight: bold; color: #28a745;">{{ summary.recent_activity_7days }}</div>
+            <div style="color: #155724; margin-top: 5px;">New Reservations</div>
+        </div>
+        <div style="background: #d1ecf1; padding: 20px; border-radius: 8px; border-left: 4px solid #17a2b8;">
+            <div style="font-size: 1.5em; font-weight: bold; color: #17a2b8;">₹{{ "%.2f"|format(summary.recent_revenue_7days) }}</div>
+            <div style="color: #0c5460; margin-top: 5px;">Revenue Generated</div>
+        </div>
+        <div style="background: #fff3cd; padding: 20px; border-radius: 8px; border-left: 4px solid #ffc107;">
+            <div style="font-size: 1.5em; font-weight: bold; color: #856404;">{{ summary.basic_stats.active_reservations }}</div>
+            <div style="color: #856404; margin-top: 5px;">Currently Active</div>
+        </div>
+    </div>
+</div>
+
+<!-- Monthly Performance -->
+{% if summary.monthly_stats %}
+<div style="margin-bottom: 40px;">
+    <h3>Monthly Performance</h3>
+    <div style="overflow-x: auto;">
+        <table style="width: 100%; border-collapse: collapse;">
+            <thead>
+                <tr style="background: #f8f9fa;">
+                    <th style="padding: 12px; text-align: left; border: 1px solid #dee2e6;">Month</th>
+                    <th style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">Reservations</th>
+                    <th style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">Total Hours</th>
+                    <th style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">Revenue</th>
+                    <th style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">Avg Revenue/Session</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for month, data in summary.monthly_stats.items() %}
+                <tr>
+                    <td style="padding: 12px; border: 1px solid #dee2e6;">
+                        <strong>{{ month }}</strong>
+                    </td>
+                    <td style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">
+                        {{ data.reservations }}
+                    </td>
+                    <td style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">
+                        {{ "%.1f"|format(data.hours) }}h
+                    </td>
+                    <td style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">
+                        ₹{{ "%.2f"|format(data.revenue) }}
+                    </td>
+                    <td style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">
+                        ₹{{ "%.2f"|format(data.revenue / data.reservations if data.reservations > 0 else 0) }}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<!-- Parking Lot Performance -->
+{% if summary.lot_performance %}
+<div style="margin-bottom: 40px;">
+    <h3>Parking Lot Performance</h3>
+    <div style="overflow-x: auto;">
+        <table style="width: 100%; border-collapse: collapse;">
+            <thead>
+                <tr style="background: #f8f9fa;">
+                    <th style="padding: 12px; text-align: left; border: 1px solid #dee2e6;">Location</th>
+                    <th style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">Total Spots</th>
+                    <th style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">Occupancy</th>
+                    <th style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">Reservations</th>
+                    <th style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">Revenue</th>
+                    <th style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">Avg Duration</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for lot in summary.lot_performance %}
+                <tr>
+                    <td style="padding: 12px; border: 1px solid #dee2e6;">
+                        <strong>{{ lot.prime_location_name }}</strong>
+                    </td>
+                    <td style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">
+                        {{ lot.total_spots or 0 }}
+                    </td>
+                    <td style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">
+                        {% set occupancy_rate = ((lot.occupied_spots or 0) / (lot.total_spots or 1) * 100) %}
+                        {% if occupancy_rate > 80 %}
+                            <span class="occupancy-high">{{ lot.occupied_spots or 0 }}/{{ lot.total_spots or 0 }}</span>
+                        {% elif occupancy_rate < 50 %}
+                            <span class="occupancy-low">{{ lot.occupied_spots or 0 }}/{{ lot.total_spots or 0 }}</span>
+                        {% else %}
+                            <span class="occupancy-medium">{{ lot.occupied_spots or 0 }}/{{ lot.total_spots or 0 }}</span>
+                        {% endif %}
+                        <br>
+                        <small>({{ "%.1f"|format(occupancy_rate) }}%)</small>
+                    </td>
+                    <td style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">
+                        {{ lot.total_reservations or 0 }}
+                        <br>
+                        <small style="color: #28a745;">({{ lot.completed_reservations or 0 }} completed)</small>
+                    </td>
+                    <td style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">
+                        <strong>₹{{ "%.2f"|format(lot.revenue or 0) }}</strong>
+                    </td>
+                    <td style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">
+                        {{ "%.1f"|format(lot.avg_duration or 0) }}h
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<!-- Top Users -->
+{% if summary.user_activity %}
+<div style="margin-bottom: 40px;">
+    <h3>Top Active Users</h3>
+    <div style="overflow-x: auto;">
+        <table style="width: 100%; border-collapse: collapse;">
+            <thead>
+                <tr style="background: #f8f9fa;">
+                    <th style="padding: 12px; text-align: left; border: 1px solid #dee2e6;">User</th>
+                    <th style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">Total Reservations</th>
+                    <th style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">Completed</th>
+                    <th style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">Total Spent</th>
+                    <th style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">Active Now</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for user in summary.user_activity[:10] %}
+                <tr>
+                    <td style="padding: 12px; border: 1px solid #dee2e6;">
+                        <strong>{{ user.full_name }}</strong><br>
+                        <small style="color: #666;">@{{ user.username }}</small>
+                    </td>
+                    <td style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">
+                        {{ user.total_reservations or 0 }}
+                    </td>
+                    <td style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">
+                        {{ user.completed_sessions or 0 }}
+                    </td>
+                    <td style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">
+                        <strong style="color: #28a745;">₹{{ "%.2f"|format(user.total_spent or 0) }}</strong>
+                    </td>
+                    <td style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">
+                        {% if user.active_sessions > 0 %}
+                            <span style="color: #ffc107; font-weight: bold;">{{ user.active_sessions }}</span>
+                        {% else %}
+                            <span style="color: #6c757d;">-</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<!-- System Insights -->
+<div style="margin-bottom: 40px;">
+    <h3>System Insights</h3>
+    <div style="background: #f8f9fa; padding: 20px; border-radius: 8px;">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px;">
+            <div style="text-align: center;">
+                <div style="font-size: 2em; color: #007bff;">
+                    ₹{{ "%.2f"|format(summary.basic_stats.total_revenue / summary.basic_stats.completed_reservations if summary.basic_stats.completed_reservations > 0 else 0) }}
+                </div>
+                <div style="color: #666;">Average Revenue per Session</div>
+            </div>
+            
+            <div style="text-align: center;">
+                <div style="font-size: 2em; color: #28a745;">
+                    {{ "%.1f"|format(summary.basic_stats.occupancy_rate) }}%
+                </div>
+                <div style="color: #666;">Current Occupancy Rate</div>
+            </div>
+            
+            {% if summary.lot_performance %}
+            <div style="text-align: center;">
+                <div style="font-size: 2em; color: #ffc107;">
+                    {{ summary.lot_performance|selectattr('revenue')|list|length }}
+                </div>
+                <div style="color: #666;">Revenue-Generating Lots</div>
+            </div>
+            {% endif %}
+        </div>
+        
+        <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #dee2e6;">
+            <h4>System Recommendations:</h4>
+            <ul style="color: #666; margin: 10px 0;">
+                {% if summary.basic_stats.occupancy_rate > 80 %}
+                <li><strong>High Occupancy:</strong> Consider adding more parking spots or increasing prices during peak hours.</li>
+                {% elif summary.basic_stats.occupancy_rate < 30 %}
+                <li><strong>Low Occupancy:</strong> Consider promotional pricing or marketing to increase utilization.</li>
+                {% endif %}
+                
+                {% if summary.basic_stats.total_revenue / summary.basic_stats.completed_reservations < 50 if summary.basic_stats.completed_reservations > 0 else false %}
+                <li><strong>Revenue Optimization:</strong> Average session revenue is low. Consider reviewing pricing strategy.</li>
+                {% endif %}
+                
+                {% if summary.user_activity|length < summary.basic_stats.total_users * 0.3 %}
+                <li><strong>User Engagement:</strong> Many registered users haven't made reservations. Consider engagement campaigns.</li>
+                {% endif %}
+                
+                {% if summary.lot_performance %}
+                    {% set underperforming_lots = summary.lot_performance|selectattr('revenue', 'lt', 100)|list %}
+                    {% if underperforming_lots|length > 0 %}
+                    <li><strong>Lot Performance:</strong> {{ underperforming_lots|length }} lot(s) have low revenue. Review pricing or location accessibility.</li>
+                    {% endif %}
+                {% endif %}
+            </ul>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Transactions -->
+{% if summary.all_reservations %}
+<div>
+    <h3>Recent Transactions</h3>
+    <div style="max-height: 400px; overflow-y: auto;">
+        {% for reservation in summary.all_reservations %}
+        <div style="background: #ffffff; border: 1px solid #dee2e6; border-radius: 4px; padding: 15px; margin: 10px 0;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <strong>{{ reservation.prime_location_name }}</strong> - Spot #{{ reservation.spot_number }}<br>
+                    <small style="color: #666;">
+                        {{ reservation.full_name }} (@{{ reservation.username }}) | {{ reservation.created_at[:16] }}
+                    </small>
+                    <br>
+                    {% if reservation.status == 'completed' %}
+                        <span class="status-badge status-completed">COMPLETED</span>
+                    {% elif reservation.status == 'occupied' %}
+                        <span class="status-badge status-occupied">OCCUPIED</span>
+                    {% elif reservation.status == 'reserved' %}
+                        <span class="status-badge status-reserved">RESERVED</span>
+                    {% else %}
+                        <span class="status-badge status-other">{{ reservation.status.upper() }}</span>
+                    {% endif %}
+                </div>
+                <div style="text-align: right;">
+                    {% if reservation.parking_cost %}
+                        <strong style="color: #28a745; font-size: 1.1em;">₹{{ "%.2f"|format(reservation.parking_cost) }}</strong><br>
+                        {% if reservation.duration_hours %}
+                            <small style="color: #666;">{{ "%.1f"|format(reservation.duration_hours) }}h</small>
+                        {% endif %}
+                    {% else %}
+                        <span style="color: #6c757d;">Pending</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+{% endblock %}

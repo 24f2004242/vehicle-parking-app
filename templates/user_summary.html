@@ -1,0 +1,258 @@
+{% extends "base.html" %}
+
+{% block title %}Parking Summary - {{ session.user_fullname }}{% endblock %}
+
+{% block content %}
+<style>
+/* Usage progress bars */
+.usage-progress-container {
+    margin-top: 15px;
+}
+
+.usage-progress-bar {
+    background: #e9ecef;
+    height: 8px;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.usage-progress-fill {
+    background: #007bff;
+    height: 100%;
+    transition: width 0.3s ease;
+}
+
+.usage-percentage-text {
+    color: #666;
+    margin-top: 5px;
+    display: block;
+}
+
+.usage-progress-bar {
+    background: #e9ecef;
+    height: 8px;
+    border-radius: 4px;
+    overflow: hidden;
+    --usage-width: 0%;
+}
+
+.usage-progress-fill {
+    background: #007bff;
+    height: 100%;
+    width: var(--usage-width);
+    transition: width 0.3s ease;
+}
+
+</style>
+
+<div class="header">
+    <h1>Your Parking Summary</h1>
+    <p>Complete analytics of your parking activity</p>
+</div>
+
+<div style="margin-bottom: 20px;">
+    <a href="{{ url_for('user_dashboard') }}" class="btn">Back to Dashboard</a>
+    <a href="{{ url_for('user_history') }}" class="btn" style="background: #6c757d; margin-left: 10px;">View History</a>
+</div>
+
+<!-- Overall Statistics -->
+<div style="margin-bottom: 40px;">
+    <h3>Overall Statistics</h3>
+    <div class="stats">
+        <div class="stat-card">
+            <div class="stat-number">{{ summary.total_reservations }}</div>
+            <div class="stat-label">Total Reservations</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number">{{ summary.completed_sessions }}</div>
+            <div class="stat-label">Completed Sessions</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number">{{ summary.active_sessions }}</div>
+            <div class="stat-label">Active Sessions</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number">₹{{ "%.2f"|format(summary.total_cost) }}</div>
+            <div class="stat-label">Total Spent</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number">{{ "%.1f"|format(summary.total_hours) }}h</div>
+            <div class="stat-label">Total Parking Time</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number">₹{{ "%.2f"|format(summary.average_cost_per_session) }}</div>
+            <div class="stat-label">Avg Cost/Session</div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Activity (Last 30 Days) -->
+<div style="margin-bottom: 40px;">
+    <h3>Recent Activity (Last 30 Days)</h3>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+        <div style="background: #d4edda; padding: 20px; border-radius: 8px; border-left: 4px solid #28a745;">
+            <div style="font-size: 1.5em; font-weight: bold; color: #28a745;">{{ summary.recent_activity_30days }}</div>
+            <div style="color: #155724; margin-top: 5px;">Sessions Completed</div>
+        </div>
+        <div style="background: #d1ecf1; padding: 20px; border-radius: 8px; border-left: 4px solid #17a2b8;">
+            <div style="font-size: 1.5em; font-weight: bold; color: #17a2b8;">₹{{ "%.2f"|format(summary.recent_cost_30days) }}</div>
+            <div style="color: #0c5460; margin-top: 5px;">Amount Spent</div>
+        </div>
+    </div>
+</div>
+
+<!-- Monthly Breakdown -->
+{% if summary.monthly_data %}
+<div style="margin-bottom: 40px;">
+    <h3>Monthly Breakdown</h3>
+    <div style="overflow-x: auto;">
+        <table style="width: 100%; border-collapse: collapse;">
+            <thead>
+                <tr style="background: #f8f9fa;">
+                    <th style="padding: 12px; text-align: left; border: 1px solid #dee2e6;">Month</th>
+                    <th style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">Sessions</th>
+                    <th style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">Total Hours</th>
+                    <th style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">Total Cost</th>
+                    <th style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">Avg Cost</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for month, data in summary.monthly_data.items() %}
+                <tr>
+                    <td style="padding: 12px; border: 1px solid #dee2e6;">
+                        <strong>{{ month }}</strong>
+                    </td>
+                    <td style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">
+                        {{ data.count }}
+                    </td>
+                    <td style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">
+                        {{ "%.1f"|format(data.hours) }}h
+                    </td>
+                    <td style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">
+                        ₹{{ "%.2f"|format(data.cost) }}
+                    </td>
+                    <td style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">
+                        ₹{{ "%.2f"|format(data.cost / data.count if data.count > 0 else 0) }}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<!-- Favorite Locations -->
+{% if summary.location_stats %}
+<div style="margin-bottom: 40px;">
+    <h3>Your Favorite Parking Locations</h3>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
+        {% for location, stats in summary.location_stats.items() %}
+        <div style="background: #ffffff; border: 1px solid #dee2e6; border-radius: 8px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+            <h4 style="margin: 0 0 15px 0; color: #333;">{{ location }}</h4>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                <div>
+                    <p style="margin: 5px 0;"><strong>Visits:</strong> {{ stats.count }}</p>
+                    <p style="margin: 5px 0;"><strong>Total Hours:</strong> {{ "%.1f"|format(stats.hours) }}h</p>
+                </div>
+                <div>
+                    <p style="margin: 5px 0;"><strong>Total Spent:</strong> ₹{{ "%.2f"|format(stats.cost) }}</p>
+                    <p style="margin: 5px 0;"><strong>Avg/Visit:</strong> ₹{{ "%.2f"|format(stats.cost / stats.count if stats.count > 0 else 0) }}</p>
+                </div>
+            </div>
+            
+            <div class="usage-progress-container">
+                {% set usage_percentage = (stats.count / summary.completed_sessions * 100) if summary.completed_sessions > 0 else 0 %}
+                <div class="usage-progress-bar" style="--usage-width: {{ usage_percentage }}%;">
+                    <div class="usage-progress-fill"></div>
+                </div>
+                <small class="usage-percentage-text">
+                    {{ "%.1f"|format(usage_percentage) }}% of your total visits
+                </small>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<!-- Parking Insights -->
+<div style="margin-bottom: 40px;">
+    <h3>Parking Insights</h3>
+    <div style="background: #f8f9fa; padding: 20px; border-radius: 8px;">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px;">
+            <div style="text-align: center;">
+                <div style="font-size: 2em; color: #007bff;">{{ "%.1f"|format(summary.average_duration) }}h</div>
+                <div style="color: #666;">Average Session Duration</div>
+            </div>
+            
+            {% if summary.completed_sessions > 0 %}
+            <div style="text-align: center;">
+                <div style="font-size: 2em; color: #28a745;">
+                    {{ "%.1f"|format((summary.completed_sessions / summary.total_reservations * 100) if summary.total_reservations > 0 else 0) }}%
+                </div>
+                <div style="color: #666;">Completion Rate</div>
+            </div>
+            {% endif %}
+            
+            {% if summary.location_stats %}
+            <div style="text-align: center;">
+                <div style="font-size: 2em; color: #ffc107;">{{ summary.location_stats|length }}</div>
+                <div style="color: #666;">Different Locations Used</div>
+            </div>
+            {% endif %}
+        </div>
+        
+        <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #dee2e6;">
+            <h4>Quick Tips:</h4>
+            <ul style="color: #666; margin: 10px 0;">
+                {% if summary.average_duration < 1.5 %}
+                <li>Your sessions are typically short. Consider locations closer to your destination.</li>
+                {% elif summary.average_duration > 4 %}
+                <li>You tend to park for longer periods. Look for lots with better hourly rates.</li>
+                {% endif %}
+                
+                {% if summary.completed_sessions / summary.total_reservations < 0.8 if summary.total_reservations > 0 else false %}
+                <li>You have some cancelled reservations. Try to reserve closer to your arrival time.</li>
+                {% endif %}
+                
+                {% if summary.location_stats|length == 1 %}
+                <li>You're loyal to one location! Consider exploring other nearby options for better rates.</li>
+                {% elif summary.location_stats|length > 5 %}
+                <li>You use many different locations. Great for finding the best deals!</li>
+                {% endif %}
+            </ul>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Completed Sessions -->
+{% if summary.completed_reservations %}
+<div>
+    <h3>Recent Completed Sessions</h3>
+    <div style="max-height: 400px; overflow-y: auto;">
+        {% for reservation in summary.completed_reservations[:10] %}
+        <div style="background: #ffffff; border: 1px solid #dee2e6; border-radius: 4px; padding: 15px; margin: 10px 0;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <strong>{{ reservation.prime_location_name }}</strong> - Spot #{{ reservation.spot_number }}<br>
+                    <small style="color: #666;">
+                        {{ reservation.created_at[:16] }}
+                        {% if reservation.parking_timestamp and reservation.leaving_timestamp %}
+                           | Duration: {{ "%.1f"|format(reservation.duration_hours) }}h
+                       {% endif %}
+                   </small>
+               </div>
+               <div style="text-align: right;">
+                   {% if reservation.parking_cost %}
+                       <strong style="color: #28a745; font-size: 1.1em;">₹{{ "%.2f"|format(reservation.parking_cost) }}</strong>
+                   {% endif %}
+               </div>
+           </div>
+       </div>
+       {% endfor %}
+   </div>
+</div>
+{% endif %}
+{% endblock %}

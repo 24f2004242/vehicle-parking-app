@@ -33,6 +33,14 @@
         <div class="stat-number">{{ stats.active_reservations }}</div>
         <div class="stat-label">Active Reservations</div>
     </div>
+    <div class="stat-card">
+        <div class="stat-number">₹{{ "%.2f"|format(stats.total_revenue) }}</div>
+        <div class="stat-label">Total Revenue</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-number">{{ "%.1f"|format(stats.occupancy_rate) }}%</div>
+        <div class="stat-label">Occupancy Rate</div>
+    </div>
 </div>
 
 <div style="margin-top: 30px;">
@@ -41,6 +49,7 @@
         <a href="{{ url_for('admin_lots') }}" class="btn">Manage Parking Lots</a>
         <a href="{{ url_for('admin_add_lot') }}" class="btn">Add New Lot</a>
         <a href="{{ url_for('admin_users') }}" class="btn">View All Users</a>
+        <a href="{{ url_for('admin_summary') }}" class="btn" style="background: #17a2b8;">Detailed Analytics</a>
     </div>
 </div>
 
@@ -64,6 +73,23 @@
             </div>
         </div>
         {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<!-- System Performance Overview -->
+{% if summary %}
+<div style="margin-top: 30px;">
+    <h3>Recent Performance (Last 7 Days)</h3>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+        <div style="background: #d4edda; padding: 15px; border-radius: 8px; border-left: 4px solid #28a745;">
+            <div style="font-size: 1.3em; font-weight: bold; color: #28a745;">{{ summary.recent_activity_7days }}</div>
+            <div style="color: #155724; margin-top: 5px;">New Reservations</div>
+        </div>
+        <div style="background: #d1ecf1; padding: 15px; border-radius: 8px; border-left: 4px solid #17a2b8;">
+            <div style="font-size: 1.3em; font-weight: bold; color: #17a2b8;">₹{{ "%.2f"|format(summary.recent_revenue_7days) }}</div>
+            <div style="color: #0c5460; margin-top: 5px;">Revenue Generated</div>
+        </div>
     </div>
 </div>
 {% endif %}

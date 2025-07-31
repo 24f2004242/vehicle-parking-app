@@ -1,0 +1,259 @@
+{% extends "base.html" %}
+
+{% block title %}Cost Breakdown - {{ session.user_fullname }}{% endblock %}
+
+{% block content %}
+<style>
+/* Cost analysis specific styles */
+.filter-select {
+    padding: 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    background: white;
+}
+
+.cost-card {
+    background: #ffffff;
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    padding: 20px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.cost-proportion-bar {
+    background: #e9ecef;
+    height: 8px;
+    border-radius: 4px;
+    overflow: hidden;
+    margin-top: 15px;
+}
+
+.cost-proportion-fill {
+    background: #007bff;
+    height: 100%;
+    transition: width 0.3s ease;
+}
+
+.trend-bar {
+    background: #e9ecef;
+    height: 20px;
+    border-radius: 4px;
+    position: relative;
+    overflow: hidden;
+}
+
+.trend-fill {
+    background: #007bff;
+    height: 100%;
+    transition: width 0.3s ease;
+}
+
+.efficiency-indicator {
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 0.8em;
+    font-weight: bold;
+}
+
+.efficiency-good {
+    background: #d4edda;
+    color: #28a745;
+}
+
+.efficiency-medium {
+    background: #fff3cd;
+    color: #ffc107;
+}
+
+.efficiency-poor {
+    background: #f8d7da;
+    color: #dc3545;
+}
+</style>
+
+<div class="header">
+    <h1>Detailed Cost Breakdown</h1>
+    <p>Comprehensive analysis of your parking expenses</p>
+</div>
+
+<div style="margin-bottom: 20px;">
+    <a href="{{ url_for('user_dashboard') }}" class="btn">Back to Dashboard</a>
+    <a href="{{ url_for('user_summary') }}" class="btn" style="background: #17a2b8; margin-left: 10px;">Summary</a>
+    
+    <!-- Time Period Filter -->
+    <div style="float: right;">
+        <select class="filter-select" onchange="window.location.href=this.value">
+            <option value="{{ url_for('user_cost_breakdown') }}?period=all" {% if breakdown.time_period == 'all' %}selected{% endif %}>All Time</option>
+            <option value="{{ url_for('user_cost_breakdown') }}?period=week" {% if breakdown.time_period == 'week' %}selected{% endif %}>Last Week</option>
+            <option value="{{ url_for('user_cost_breakdown') }}?period=month" {% if breakdown.time_period == 'month' %}selected{% endif %}>Last Month</option>
+            <option value="{{ url_for('user_cost_breakdown') }}?period=year" {% if breakdown.time_period == 'year' %}selected{% endif %}>Last Year</option>
+        </select>
+    </div>
+    <div style="clear: both;"></div>
+</div>
+
+<!-- Cost Summary -->
+<div style="margin-bottom: 40px;">
+    <h3>Cost Summary 
+        {% if breakdown.time_period != 'all' %}
+            ({{ breakdown.time_period.title() }})
+        {% endif %}
+    </h3>
+    <div class="stats">
+        <div class="stat-card">
+            <div class="stat-number">₹{{ "%.2f"|format(breakdown.total_cost) }}</div>
+            <div class="stat-label">Total Spent</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number">{{ breakdown.total_sessions }}</div>
+            <div class="stat-label">Parking Sessions</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number">{{ "%.1f"|format(breakdown.total_hours) }}h</div>
+            <div class="stat-label">Total Hours</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number">₹{{ "%.2f"|format(breakdown.average_cost_per_session) }}</div>
+            <div class="stat-label">Avg Cost/Session</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number">₹{{ "%.2f"|format(breakdown.average_cost_per_hour) }}</div>
+            <div class="stat-label">Avg Cost/Hour</div>
+        </div>
+    </div>
+</div>
+
+<!-- Location Cost Breakdown -->
+{% if breakdown.location_breakdown %}
+<div style="margin-bottom: 40px;">
+    <h3>Cost by Location</h3>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
+        {% for location, stats in breakdown.location_breakdown.items() %}
+        <div class="cost-card">
+            <h4 style="margin: 0 0 15px 0; color: #333;">{{ location }}</h4>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                <div>
+                    <p style="margin: 5px 0;"><strong>Sessions:</strong> {{ stats.sessions }}</p>
+                    <p style="margin: 5px 0;"><strong>Total Hours:</strong> {{ "%.1f"|format(stats.hours) }}h</p>
+                </div>
+                <div>
+                    <p style="margin: 5px 0;"><strong>Total Cost:</strong> ₹{{ "%.2f"|format(stats.cost) }}</p>
+                    <p style="margin: 5px 0;"><strong>Avg/Session:</strong> ₹{{ "%.2f"|format(stats.cost / stats.sessions if stats.sessions > 0 else 0) }}</p>
+                </div>
+            </div>
+            
+            <!-- Cost proportion indicator with inline style -->
+            <div class="cost-proportion-bar">
+                <div class="cost-proportion-fill" style="width: {{ (stats.cost / breakdown.total_cost * 100) if breakdown.total_cost > 0 else 0 }}%;"></div>
+            </div>
+            <small style="color: #666; margin-top: 5px; display: block;">
+                {{ "%.1f"|format((stats.cost / breakdown.total_cost * 100) if breakdown.total_cost > 0 else 0) }}% of total spending
+            </small>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<!-- Time-based Cost Trends -->
+{% if breakdown.time_breakdown and breakdown.time_period == 'year' %}
+<div style="margin-bottom: 40px;">
+    <h3>Monthly Cost Trends</h3>
+    <div style="margin-bottom: 20px;">
+        {% set max_cost = breakdown.time_breakdown.values()|map(attribute='cost')|max or 1 %}
+        {% for time_key, stats in breakdown.time_breakdown.items() %}
+        <div style="margin-bottom: 10px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                <span><strong>{{ time_key }}</strong></span>
+                <span>₹{{ "%.2f"|format(stats.cost) }} ({{ stats.sessions }} sessions)</span>
+            </div>
+            <div class="trend-bar">
+                <div class="trend-fill" style="width: {{ (stats.cost / max_cost * 100) }}%;"></div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<!-- Recent Transactions Table -->
+{% if breakdown.reservations %}
+<div style="margin-bottom: 40px;">
+    <h3>Recent Transactions</h3>
+    <div style="overflow-x: auto;">
+        <table style="width: 100%; border-collapse: collapse;">
+            <thead>
+                <tr style="background: #f8f9fa;">
+                    <th style="padding: 12px; text-align: left; border: 1px solid #dee2e6;">Date</th>
+                    <th style="padding: 12px; text-align: left; border: 1px solid #dee2e6;">Location</th>
+                    <th style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">Duration</th>
+                    <th style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">Rate</th>
+                    <th style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">Cost</th>
+                    <th style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">Efficiency</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for reservation in breakdown.reservations[:20] %}
+                <tr>
+                    <td style="padding: 12px; border: 1px solid #dee2e6;">
+                        {{ reservation.created_at[:10] }}<br>
+                        <small style="color: #666;">{{ reservation.created_at[11:16] }}</small>
+                    </td>
+                    <td style="padding: 12px; border: 1px solid #dee2e6;">
+                        <strong>{{ reservation.prime_location_name }}</strong><br>
+                        <small>Spot #{{ reservation.spot_number }}</small>
+                    </td>
+                    <td style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">
+                        {% if reservation.duration_hours %}
+                            {{ "%.1f"|format(reservation.duration_hours) }}h
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                    <td style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">
+                        ₹{{ reservation.price_per_hour }}/h
+                    </td>
+                    <td style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">
+                        {% if reservation.parking_cost %}
+                            <strong style="color: #28a745;">₹{{ "%.2f"|format(reservation.parking_cost) }}</strong>
+                        {% else %}
+                            <span style="color: #6c757d;">-</span>
+                        {% endif %}
+                    </td>
+                    <td style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">
+                        {% if reservation.parking_cost and reservation.duration_hours %}
+                            {% set efficiency = reservation.parking_cost / reservation.duration_hours %}
+                            {% if efficiency < 50 %}
+                                <span class="efficiency-indicator efficiency-good">₹{{ "%.0f"|format(efficiency) }}/h</span>
+                            {% elif efficiency < 80 %}
+                                <span class="efficiency-indicator efficiency-medium">₹{{ "%.0f"|format(efficiency) }}/h</span>
+                            {% else %}
+                                <span class="efficiency-indicator efficiency-poor">₹{{ "%.0f"|format(efficiency) }}/h</span>
+                            {% endif %}
+                        {% else %}
+                            <span style="color: #6c757d;">-</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    
+    {% if breakdown.reservations|length > 20 %}
+    <p style="text-align: center; margin-top: 15px; color: #666;">
+        Showing recent 20 transactions. <a href="{{ url_for('user_history') }}">View all history</a>
+    </p>
+    {% endif %}
+</div>
+{% endif %}
+
+{% if not breakdown.reservations %}
+<div style="text-align: center; padding: 40px; background: #f8f9fa; border-radius: 8px;">
+    <h3>No Parking History</h3>
+    <p>You haven't completed any parking sessions in this time period.</p>
+    <a href="{{ url_for('user_dashboard') }}" class="btn">Find Parking</a>
+</div>
+{% endif %}
+{% endblock %}

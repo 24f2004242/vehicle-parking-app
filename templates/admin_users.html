@@ -3,6 +3,44 @@
 {% block title %}Manage Users - Admin{% endblock %}
 
 {% block content %}
+<style>
+.user-spending-high {
+    color: #28a745;
+    font-weight: bold;
+}
+
+.user-spending-medium {
+    color: #ffc107;
+    font-weight: bold;
+}
+
+.user-spending-low {
+    color: #6c757d;
+}
+
+.user-activity-indicator {
+    padding: 2px 6px;
+    border-radius: 8px;
+    font-size: 0.8em;
+    font-weight: bold;
+}
+
+.activity-high {
+    background: #d4edda;
+    color: #28a745;
+}
+
+.activity-medium {
+    background: #fff3cd;
+    color: #ffc107;
+}
+
+.activity-low {
+    background: #f8d7da;
+    color: #dc3545;
+}
+</style>
+
 <div class="header">
     <h1>Registered Users</h1>
     <p>View all registered users and their activity</p>
@@ -18,6 +56,8 @@
                 <th style="padding: 12px; text-align: left; border: 1px solid #dee2e6;">Email</th>
                 <th style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">Total Reservations</th>
                 <th style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">Active</th>
+                <th style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">Total Spent</th>
+                <th style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">Activity Level</th>
                 <th style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">Joined</th>
             </tr>
         </thead>
@@ -44,6 +84,28 @@
                     {% endif %}
                 </td>
                 <td style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">
+                    {% set total_spent = user.total_spent or 0 %}
+                    {% if total_spent > 500 %}
+                        <span class="user-spending-high">₹{{ "%.2f"|format(total_spent) }}</span>
+                    {% elif total_spent > 100 %}
+                        <span class="user-spending-medium">₹{{ "%.2f"|format(total_spent) }}</span>
+                    {% else %}
+                        <span class="user-spending-low">₹{{ "%.2f"|format(total_spent) }}</span>
+                    {% endif %}
+                </td>
+                <td style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">
+                    {% set reservations = user.total_reservations or 0 %}
+                    {% if reservations > 10 %}
+                        <span class="user-activity-indicator activity-high">High</span>
+                    {% elif reservations > 3 %}
+                        <span class="user-activity-indicator activity-medium">Medium</span>
+                    {% elif reservations > 0 %}
+                        <span class="user-activity-indicator activity-low">Low</span>
+                    {% else %}
+                        <span style="color: #6c757d;">Inactive</span>
+                    {% endif %}
+                </td>
+                <td style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">
                     <small>{{ user.created_at[:10] }}</small>
                 </td>
             </tr>
@@ -51,8 +113,35 @@
         </tbody>
     </table>
 </div>
+
+<!-- User Statistics Summary -->
+<div style="margin-top: 30px;">
+    <h3>User Statistics Summary</h3>
+    {% set active_users = users|selectattr('total_reservations')|list %}
+    {% set high_value_users = users|selectattr('total_spent', 'gt', 500)|list %}
+    
+    <div class="stats">
+        <div class="stat-card">
+            <div class="stat-number">{{ users|length }}</div>
+            <div class="stat-label">Total Registered</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number">{{ active_users|length }}</div>
+            <div class="stat-label">Active Users</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number">{{ high_value_users|length }}</div>
+            <div class="stat-label">High Value Users</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number">{{ "%.1f"|format((active_users|length / users|length * 100) if users|length > 0 else 0) }}%</div>
+            <div class="stat-label">Engagement Rate</div>
+        </div>
+    </div>
+</div>
+
 {% else %}
-<div style="text-align: center; padding: 40px; background: #f8f9fa; border-radius: 8px; margin-top: 20px;">
+<div style="text-align: center; padding: 40px; background: #f8f9fa; border-radius: 8px;">
     <h3>No Users Found</h3>
     <p>No users have registered yet.</p>
 </div>

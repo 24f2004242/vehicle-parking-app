@@ -14,25 +14,6 @@
     height: 8px;
     border-radius: 4px;
     overflow: hidden;
-}
-
-.usage-progress-fill {
-    background: #007bff;
-    height: 100%;
-    transition: width 0.3s ease;
-}
-
-.usage-percentage-text {
-    color: #666;
-    margin-top: 5px;
-    display: block;
-}
-
-.usage-progress-bar {
-    background: #e9ecef;
-    height: 8px;
-    border-radius: 4px;
-    overflow: hidden;
     --usage-width: 0%;
 }
 
@@ -43,6 +24,11 @@
     transition: width 0.3s ease;
 }
 
+.usage-percentage-text {
+    color: #666;
+    margin-top: 5px;
+    display: block;
+}
 </style>
 
 <div class="header">
@@ -52,6 +38,7 @@
 
 <div style="margin-bottom: 20px;">
     <a href="{{ url_for('user_dashboard') }}" class="btn">Back to Dashboard</a>
+    <a href="{{ url_for('user_cost_breakdown') }}" class="btn" style="background: #28a745; margin-left: 10px;">Cost Analysis</a>
     <a href="{{ url_for('user_history') }}" class="btn" style="background: #6c757d; margin-left: 10px;">View History</a>
 </div>
 
@@ -90,11 +77,11 @@
 <div style="margin-bottom: 40px;">
     <h3>Recent Activity (Last 30 Days)</h3>
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
-        <div style="background: #d4edda; padding: 20px; border-radius: 8px; border-left: 4px solid #28a745;">
+        <div style="background: #d4edda; padding: 20px; border-radius: 8px;">
             <div style="font-size: 1.5em; font-weight: bold; color: #28a745;">{{ summary.recent_activity_30days }}</div>
             <div style="color: #155724; margin-top: 5px;">Sessions Completed</div>
         </div>
-        <div style="background: #d1ecf1; padding: 20px; border-radius: 8px; border-left: 4px solid #17a2b8;">
+        <div style="background: #d1ecf1; padding: 20px; border-radius: 8px;">
             <div style="font-size: 1.5em; font-weight: bold; color: #17a2b8;">₹{{ "%.2f"|format(summary.recent_cost_30days) }}</div>
             <div style="color: #0c5460; margin-top: 5px;">Amount Spent</div>
         </div>
@@ -213,7 +200,7 @@
                 <li>You tend to park for longer periods. Look for lots with better hourly rates.</li>
                 {% endif %}
                 
-                {% if summary.completed_sessions / summary.total_reservations < 0.8 if summary.total_reservations > 0 else false %}
+                {% if summary.completed_sessions > 0 and (summary.total_cost / summary.completed_sessions) < 50 %}
                 <li>You have some cancelled reservations. Try to reserve closer to your arrival time.</li>
                 {% endif %}
                 
@@ -228,11 +215,11 @@
 </div>
 
 <!-- Recent Completed Sessions -->
-{% if summary.completed_reservations %}
+{% if summary.all_reservations %}
 <div>
     <h3>Recent Completed Sessions</h3>
     <div style="max-height: 400px; overflow-y: auto;">
-        {% for reservation in summary.completed_reservations[:10] %}
+        {% for reservation in summary.all_reservations[:10] if reservation.status == 'completed' %}
         <div style="background: #ffffff; border: 1px solid #dee2e6; border-radius: 4px; padding: 15px; margin: 10px 0;">
             <div style="display: flex; justify-content: space-between; align-items: center;">
                 <div>

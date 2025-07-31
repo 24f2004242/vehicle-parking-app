@@ -307,8 +307,7 @@
                 <li><strong>Low Occupancy:</strong> Consider promotional pricing or marketing to increase utilization.</li>
                 {% endif %}
                 
-                {% if summary.basic_stats.total_revenue / summary.basic_stats.completed_reservations < 50 if summary.basic_stats.completed_reservations > 0 else false %}
-                <li><strong>Revenue Optimization:</strong> Average session revenue is low. Consider reviewing pricing strategy.</li>
+                {% if summary.basic_stats.completed_reservations > 0 and (summary.basic_stats.total_revenue / summary.basic_stats.completed_reservations) < 50 %}                <li><strong>Revenue Optimization:</strong> Average session revenue is low. Consider reviewing pricing strategy.</li>
                 {% endif %}
                 
                 {% if summary.user_activity|length < summary.basic_stats.total_users * 0.3 %}

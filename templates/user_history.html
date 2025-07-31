@@ -81,6 +81,8 @@
 
 <div style="margin-bottom: 20px;">
     <a href="{{ url_for('user_dashboard') }}" class="btn">Back to Dashboard</a>
+    <a href="{{ url_for('user_summary') }}" class="btn" style="background: #17a2b8; margin-left: 10px;">View Summary</a>
+    <a href="{{ url_for('user_cost_breakdown') }}" class="btn" style="background: #28a745; margin-left: 10px;">Cost Analysis</a>
 </div>
 
 {% if reservations %}

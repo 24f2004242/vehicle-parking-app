@@ -1,9 +1,11 @@
-from flask import Flask, render_template, request, redirect, url_for, session, flash
+from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
 import sqlite3
 import hashlib
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import os
 from collections import defaultdict
+import math
+
 
 def get_db_connection():
     conn = sqlite3.connect(DB_PATH)
@@ -13,6 +15,10 @@ def get_db_connection():
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
+def get_current_timestamp():
+    ist = timezone(timedelta(hours=5, minutes=30))
+    return datetime.now(ist).strftime('%Y-%m-%d %H:%M:%S')
+
 def create_database():
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -20,12 +26,12 @@ def create_database():
     # Users Table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIAMRY KEY AUTOINCREMENT,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT UNIQUE NOT NULL,
             email TEXT UNIQUE NOT NULL,
             full_name TEXT NOT NULL,
-            password_has TEXT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            password_hash TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT TIMESTAMP
         )
     ''')
 
@@ -34,8 +40,8 @@ def create_database():
         CREATE TABLE IF NOT EXISTS admin (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT UNIQUE NOT NULL,
-            password_hard TEXT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            password_hash TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT TIMESTAMP
         )
     ''')
 
@@ -47,8 +53,9 @@ def create_database():
             address TEXT NOT NULL,
             pin_code TEXT NOT NULL,
             price_per_hour REAL NOT NULL,
-            maximum_spots INTEGER NOT NUL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            maximum_spots INTEGER NOT NULL,
+            is_active BOOLEAN DEFAULT 1,
+            created_at TIMESTAMP DEFAULT TIMESTAMP
         )
     ''')
 
@@ -58,7 +65,7 @@ def create_database():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             lot_id INTEGER NOT NULL,
             status TEXT DEFAULT 'A' CHECK (status IN ('A', 'O')),
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            created_at TIMESTAMP DEFAULT TIMESTAMP,
             FOREIGN KEY (lot_id) REFERENCES parking_lots (id) ON DELETE CASCADE
         )
     ''')
@@ -72,9 +79,10 @@ def create_database():
             parking_timestamp TIMESTAMP,
             leaving_timestamp TIMESTAMP,
             parking_cost REAL DEFAULT 0.0,
+            rate_at_booking REAL DEFAULT 0.0,
             status TEXT DEFAULT 'reserved' CHECK (status IN ('reserved', 'occupied', 'completed')),
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (spot_id) REFERENCES parking_spots (id) ON DELETE CASCADE,
+            created_at TIMESTAMP DEFAULT TIMESTAMP,
+            FOREIGN KEY (spot_id) REFERENCES parking_spots (id),
             FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
         )
     ''')
@@ -90,10 +98,11 @@ def insert_default_admin():
     cursor.execute("SELECT * FROM admin WHERE username = ?", ('admin', ))
     if cursor.fetchone() is None:
         admin_password = hash_password('admin123')
+        current_time = get_current_timestamp()
         cursor.execute('''
-            INSERT INTO admin (username, password_hash)
-            VALUES (?,?)
-        ''', ('admin', admin_password))
+            INSERT INTO admin (username, password_hash, created_at)
+            VALUES (?,?, ?)
+        ''', ('admin', admin_password,  current_time))
         conn.commit()
         print("Default admin created - Username: admin, Password: admin123")
 
@@ -131,10 +140,11 @@ def create_user(username, email, full_name, password):
 
     try:
         password_hash = hash_password(password)
+        current_time = get_current_timestamp()
         cursor.execute('''
-            INSERT INTO (username, email, full_name, password_hash)
-            VALUES (?,?,?,?)
-        ''', (username, email, full_name, password_hash))
+            INSERT INTO users (username, email, full_name, password_hash, created_at)
+            VALUES (?,?,?,?,?)
+        ''', (username, email, full_name, password_hash, current_time))
         conn.commit()
         user_id = cursor.lastrowid
         conn.close()
@@ -180,18 +190,19 @@ def create_parking_lot(location_name, address, pin_code, price_per_hour, max_spo
     cursor = conn.cursor()
 
     try:
+        current_time = get_current_timestamp()
         cursor.execute('''
-            INSERT INTO parking_lots (prime_location_name, address, pin_code, price_per_hour, maximum_spots)
-            VALUES (?,?,?,?,?)
-        ''', (location_name, address, pin_code, price_per_hour, max_spots))
+            INSERT INTO parking_lots (prime_location_name, address, pin_code, price_per_hour, maximum_spots, created_at)
+            VALUES (?,?,?,?,?,?)
+        ''', (location_name, address, pin_code, price_per_hour, max_spots, current_time))
 
         lot_id = cursor.lastrowid
 
         for i in range(max_spots):
             cursor.execute('''
-                ISNERT INTO parking_spots (lot_id, status)
-                VALUES (?, 'A')
-            ''', (lot_id, ))
+                INSERT INTO parking_spots (lot_id, status, created_at)
+                VALUES (?, 'A', ?)
+            ''', (lot_id, current_time))
 
         conn.commit()
         conn.close()
@@ -206,9 +217,20 @@ def update_parking_lot(lot_id, location_name, address, pin_code, price_per_hour,
 
     try:
         cursor.execute('''
+            SELECT COUNT(*) FROM parking_spots ps
+            JOIN reservations r ON ps.id = r.spot_id
+            WHERE ps.lot_id = ? AND r.status IN ('reserved', 'occupied')
+        ''', (lot_id,))
+        active_reservations = cursor.fetchone()[0]
+        
+        if max_spots < active_reservations:
+            conn.close()
+            return False
+
+        cursor.execute('''
             SELECT COUNT(*) FROM parking_spots
             WHERE lot_id = ?
-        ''', (lot_id, ))
+        ''', (lot_id,))
         current_spots = cursor.fetchone()[0]
 
         cursor.execute('''
@@ -218,23 +240,31 @@ def update_parking_lot(lot_id, location_name, address, pin_code, price_per_hour,
         ''', (location_name, address, pin_code, price_per_hour, max_spots, lot_id))
 
         if max_spots > current_spots:
+            current_time = get_current_timestamp()
             for i in range(max_spots - current_spots):
                 cursor.execute('''
-                    INSERT INTO parking_spots (lot_id, status)
-                    VALUES (?, 'A')
-                ''', (lot_id, ))
+                    INSERT INTO parking_spots (lot_id, status, created_at)
+                    VALUES (?, 'A', ?)
+                ''', (lot_id, current_time))
         elif max_spots < current_spots:
+            spots_to_delete = current_spots - max_spots
             cursor.execute('''
-                DELETE FROM parking_spots
-                WHERE lot_id = ? AND status = 'A'
-                LIMIT ?
-            ''', (lot_id, current_spots - max_spots))
+                DELETE FROM parking_spots 
+                WHERE lot_id = ? AND status = 'A' 
+                AND id IN (
+                    SELECT id FROM parking_spots 
+                    WHERE lot_id = ? AND status = 'A' 
+                    ORDER BY id DESC 
+                    LIMIT ?
+                )
+            ''', (lot_id, lot_id, spots_to_delete))
 
         conn.commit()
         conn.close()
         return True
     except Exception as e:
         conn.close()
+        print(f"Error updating parking lot: {e}")
         return False
     
 def delete_parking_lot(lot_id):
@@ -244,22 +274,22 @@ def delete_parking_lot(lot_id):
     try:
         cursor.execute('''
             SELECT COUNT(*) FROM parking_spots
-            WHERE lot_id = ? AND status = '0'          
-        ''', (lot_id, ))
+            WHERE lot_id = ? AND status = 'O'          
+        ''', (lot_id,))
         occupied_spots = cursor.fetchone()[0]
 
-        if occupied_spots >0:
+        if occupied_spots > 0:
             conn.close()
             return False, "Cannot delete lot with occupied spots"
         
+        # Soft delete - mark as inactive instead of deleting
         cursor.execute('''
-            DELETE FROM parking_spots
-            WHERE lot_id = ?
-        ''', (lot_id, ))
+            UPDATE parking_lots SET is_active = 0 WHERE id = ?
+        ''', (lot_id,))
 
         conn.commit()
         conn.close()
-        return True, "Parking lot deleted success"
+        return True, "Parking lot deleted successfully"
     except Exception as e:
         conn.close()
         return False, f"Error deleting parking lot: {str(e)}"
@@ -270,11 +300,12 @@ def get_available_parking_lots():
 
     cursor.execute('''
         SELECT pl.*,
-            COUNT(ps.id) as total spots,
+            COUNT(ps.id) as total_spots,
             SUM(CASE WHEN ps.status = 'A' THEN 1 ELSE 0 END) as available_spots,
             SUM(CASE WHEN ps.status = 'O' THEN 1 ELSE 0 END) as occupied_spots
         FROM parking_lots pl
-        LEFT JOIN parking_spots on pl.id = ps.lot_id
+        LEFT JOIN parking_spots ps ON pl.id = ps.lot_id
+        WHERE pl.is_active = 1
         GROUP BY pl.id
         HAVING available_spots > 0
         ORDER BY available_spots DESC, pl.price_per_hour ASC
@@ -290,11 +321,22 @@ def reserve_parking_spot(user_id, lot_id):
 
     try:
         cursor.execute('''
+            SELECT price_per_hour FROM parking_lots WHERE id = ? AND is_active = 1
+        ''', (lot_id,))
+        
+        lot_data = cursor.fetchone()
+        if not lot_data:
+            conn.close()
+            return None, "Parking lot not found or no longer available"
+        
+        current_rate = lot_data[0]
+
+        cursor.execute('''
             SELECT id FROM parking_spots
             WHERE lot_id = ? AND status = 'A'
             ORDER BY id ASC
             LIMIT 1
-        ''', (lot_id, ))
+        ''', (lot_id,))
 
         spot = cursor.fetchone()
         if not spot:
@@ -306,28 +348,29 @@ def reserve_parking_spot(user_id, lot_id):
         cursor.execute('''
             SELECT COUNT(*) FROM reservations
             WHERE user_id = ? AND status IN ('reserved', 'occupied')
-        ''', (user_id, ))
+        ''', (user_id,))
 
         active_count = cursor.fetchone()[0]
         if active_count > 0:
             conn.close()
             return None, "You already have an active reservation"
         
+        current_time = get_current_timestamp()
         cursor.execute('''
-            INSERT INTO reservations (spot_id, user_id, status, created_at)
-            VALUES (?, ?, 'reserved', CURRENT_TIMESTAMP)
-        ''', (spot_id, user_id))
+            INSERT INTO reservations (spot_id, user_id, status, created_at, rate_at_booking)
+            VALUES (?, ?, 'reserved', ?, ?)
+        ''', (spot_id, user_id, current_time, current_rate))
 
         reservation_id = cursor.lastrowid
 
         cursor.execute('''
-            UPDATE parking_spots SET status = '0' WHERE id = ?
-        ''', (spot_id, ))
+            UPDATE parking_spots SET status = 'O' WHERE id = ?
+        ''', (spot_id,))
 
         conn.commit()
         conn.close()
 
-        return reservation_id, "Parking spot reserved successfully"
+        return reservation_id, f"Parking spot reserved successfully at ₹{current_rate}/hour"
     except Exception as e:
         conn.close()
         return None, f"Error reserved spot: {str(e)}"
@@ -347,15 +390,16 @@ def start_parking(reservation_id, user_id):
             conn.close()
             return False, "invalid reservation or already started"
         
+        current_time = get_current_timestamp()
         cursor.execute('''
             UPDATE reservations
-            SET status = 'occupied', parking_timestamp = CURRENT_TIMESTAMP
+            SET status = 'occupied', parking_timestamp = ?
             WHERE id = ?
-        ''', (reservation_id, ))
+        ''', (current_time, reservation_id))
 
         conn.commit()
         conn.close()
-        return True, "Parking staretd successfully"
+        return True, "Parking started successfully"
     
     except Exception as e:
         conn.close()
@@ -367,7 +411,7 @@ def end_parking(reservation_id, user_id):
     
     try:
         cursor.execute('''
-            SELECT r.*, pl.price_per_hour, ps.lot_id
+            SELECT r.*, pl.price_per_hour, ps.lot_id, pl.prime_location_name
             FROM reservations r
             JOIN parking_spots ps ON r.spot_id = ps.id
             JOIN parking_lots pl on ps.lot_id = pl.id
@@ -377,41 +421,53 @@ def end_parking(reservation_id, user_id):
         reservation = cursor.fetchone()
         if not reservation:
             conn.close()
-            return False, "Invalid reservation or not currently parked", 0
+            return False, "Invalid reservation or not currently parked", 0, {}
         
         reservation = dict(reservation)
-
-        parking_start = datetime.fromisofformat(reservation['parking_timestamp'])
-        parking_end = datetime.now()
-        duration_hours = (parking_end - parking_start).total_seconds() / 3600
-
-        if duration_hours < 1:
-            billable_hours = 1
-        else:
-            billable_hours = int(duration_hours) + (1 if duration_hours %1 >0 else 0)
-
-        parking_cost = billable_hours * reservation['price_per_hour']
-
+        current_time = get_current_timestamp()
+        
+        # Use stored rate if available, otherwise use current rate
+        rate_to_use = reservation.get('rate_at_booking') or reservation['price_per_hour']
+        
+        cost_details = calculate_parking_cost(
+            reservation['parking_timestamp'], 
+            current_time, 
+            rate_to_use,
+            billing_method='hourly_rounded'
+        )
+        
+        if 'error' in cost_details:
+            conn.close()
+            return False, f"Error calculating cost: {cost_details['error']}", 0, {}
+        
         cursor.execute('''
-            UPDATE reservations
-            SET status = 'completed',
-                leaving_timestamp = CURRENT_TIMESTAMP,
-                parking_cost= ?
+            UPDATE reservations 
+            SET status = 'completed', 
+                leaving_timestamp = ?,
+                parking_cost = ?
             WHERE id = ?
-        ''', (parking_cost, reservation_id))
-
+        ''', (current_time, cost_details['parking_cost'], reservation_id))
+        
         cursor.execute('''
-            UPDATE parking_spots SET status = 'A' WHERE id = ?    
-        ''', (reservation['spot_id']))
-
+            UPDATE parking_spots SET status = 'A' WHERE id = ?
+        ''', (reservation['spot_id'],))
+        
         conn.commit()
         conn.close()
-
-        return True, f"Parking ended. Duration: {duration_hours:.2f} hours, Cost: ₹{parking_cost:.2f}", parking_cost
+        
+        success_message = f"""
+        Parking ended successfully
+        Location: {reservation['prime_location_name']}
+        Duration: {format_duration(cost_details['duration_hours'])}
+        Billing: {cost_details['billing_explanation']}
+        Total Cost: ₹{cost_details['parking_cost']:.2f}
+        """
+        
+        return True, success_message, cost_details['parking_cost'], cost_details
 
     except Exception as e:
         conn.close()
-        return False, f"Error ending parking: {str(e)}"
+        return False, f"Error ending parking: {str(e)}", 0, {}
     
 def get_user_reservations(user_id, include_completed = False):
     conn = get_db_connection()
@@ -423,7 +479,13 @@ def get_user_reservations(user_id, include_completed = False):
         status_filter = "AND r.status IN ('reserved', 'occupied')"
 
     cursor.execute(f'''
-        SELECT r.*, pl.id as spot_number, pl.prime_location_name, pl.address, pl.price_per_hour
+        SELECT r.*, ps.id as spot_number, pl.prime_location_name, pl.address, 
+            COALESCE(r.rate_at_booking, pl.price_per_hour) as price_per_hour,
+            CASE 
+                WHEN r.parking_timestamp IS NOT NULL AND r.leaving_timestamp IS NOT NULL
+                THEN (julianday(r.leaving_timestamp)-julianday(r.parking_timestamp)) *24
+                ELSE 0
+            END as duration_hours
         FROM reservations r
         JOIN parking_spots ps ON r.spot_id = ps.id
         JOIN parking_lots pl ON ps.lot_id = pl.id
@@ -483,6 +545,7 @@ def get_all_parking_lots():
             SUM(CASE WHEN ps.status = 'O' THEN 1 ELSE 0 END) as occupied_spots
         FROM parking_lots pl
         LEFT JOIN parking_spots ps ON pl.id = ps.lot_id
+        WHERE pl.is_active = 1
         GROUP BY pl.id
         ORDER BY pl.created_at DESC
     ''')
@@ -497,8 +560,8 @@ def get_parking_lot_details(lot_id):
 
     cursor.execute('''
         SELECT * FROM parking_lots
-        WHERE id = ?
-    ''', (lot_id, ))
+        WHERE id = ? AND is_active = 1
+    ''', (lot_id,))
     lot = cursor.fetchone()
 
     if not lot:
@@ -512,7 +575,7 @@ def get_parking_lot_details(lot_id):
         LEFT JOIN users u on r.user_id = u.id
         WHERE ps.lot_id = ?
         ORDER BY ps.id
-    ''', (lot_id, ))
+    ''', (lot_id,))
 
     spots = [dict(row) for row in cursor.fetchall()]
     conn.close()
@@ -526,7 +589,8 @@ def get_all_users():
     cursor.execute('''
         SELECT u.*, 
             COUNT(r.id) as total_reservations,
-            COUNT(CASE WHEN r.status IN ('reserved', 'occupied') THEN 1 END) as active_reservations
+            COUNT(CASE WHEN r.status IN ('reserved', 'occupied') THEN 1 END) as active_reservations,
+            SUM(CASE WHEN r.status = 'completed' THEN r.parking_cost ELSE 0 END) as total_spent
         FROM users u
         LEFT JOIN reservations r ON u.id = r.user_id
         GROUP BY u.id
@@ -542,7 +606,8 @@ def get_user_parking_summary(user_id):
     cursor = conn.cursor()
 
     cursor.execute('''
-        SELECT r.*, ps.id as spot_number, pl.prime_location_name, pl.address, pl.price_per_hour,
+        SELECT r.*, ps.id as spot_number, pl.prime_location_name, pl.address,
+            COALESCE(r.rate_at_booking, pl.price_per_hour) as price_per_hour,
             CASE
                 WHEN r.parking_timestamp IS NOT NULL AND r.leaving_timestamp IS NOT NULL
                 THEN (julianday(r.leaving_timestamp)-julianday(r.parking_timestamp)) * 24
@@ -591,14 +656,14 @@ def get_user_parking_summary(user_id):
         'cancelled_sessions': len(cancelled_sessions),
         'total_cost': total_cost,
         'total_hours': total_hours,
-        'average_cost_per_sessions': total_cost / len(completed_sessions) if completed_sessions else 0,
+        'average_cost_per_session': total_cost / len(completed_sessions) if completed_sessions else 0,
         'average_duration': total_hours/ len(completed_sessions) if completed_sessions else 0,
         'monthly_data': dict(monthly_data),
         'location_stats': dict(location_stats),
         'recent_activity_30days': len(recent_sessions),
         'recent_cost_30days': sum(r['parking_cost'] or 0 for r in recent_sessions),
         'all_reservations': all_reservations,
-        'completed_reservations': completed_sessions,
+        'completed_reservations': len(completed_sessions),
         'active_reservations': active_sessions
     }
 
@@ -614,17 +679,21 @@ def get_admin_parking_summary():
     total_users = cursor.fetchone()[0]
 
     cursor.execute('''
-        SELECT COUNT(*) FROM parking_lots
+        SELECT COUNT(*) FROM parking_lots WHERE is_active = 1
     ''')
     total_lots = cursor.fetchone()[0]
 
     cursor.execute('''
-        SELECT COUNT(*) FROM parking_spots
+        SELECT COUNT(*) FROM parking_spots ps
+        JOIN parking_lots pl ON ps.lot_id = pl.id
+        WHERE pl.is_active = 1
     ''')
     total_spots = cursor.fetchone()[0]
 
     cursor.execute('''
-        SELECT COUNT(*) FROM parking_spots WHERE status = 'O'
+        SELECT COUNT(*) FROM parking_spots ps
+        JOIN parking_lots pl ON ps.lot_id = pl.id
+        WHERE ps.status = 'O' AND pl.is_active = 1
     ''')
     occupied_spots = cursor.fetchone()[0]
 
@@ -654,6 +723,7 @@ def get_admin_parking_summary():
         JOIN parking_spots as ps ON ps.id = r.spot_id
         JOIN parking_lots pl ON ps.lot_id = pl.id
         JOIN users u ON r.user_id = u.id
+        WHERE pl.is_active = 1
         ORDER BY r.created_at DESC
     ''')
 
@@ -679,6 +749,7 @@ def get_admin_parking_summary():
         FROM parking_lots pl
         LEFT JOIN parking_spots ps ON pl.id = ps.lot_id
         LEFT JOIN reservations r ON ps.id = r.spot_id
+        WHERE pl.is_active = 1
         GROUP BY pl.id, pl.prime_location_name
         ORDER BY revenue DESC
     ''')
@@ -700,7 +771,7 @@ def get_admin_parking_summary():
 
     user_activity = [dict(row) for row in cursor.fetchall()]
 
-    seven_days_ago = (datetime.now() - timedelta(days = 7).strftime('%Y-%m-%d'))
+    seven_days_ago = (datetime.now() - timedelta(days = 7)).strftime('%Y-%m-%d')
     recent_reservations = [r for r in all_reservations if r['created_at'] and r['created_at']>=seven_days_ago]
 
     conn.close()
@@ -712,7 +783,8 @@ def get_admin_parking_summary():
             'total_spots': total_spots,
             'occupied_spots': occupied_spots,
             'available_spots': total_spots - occupied_spots,
-            'active_reservations': completed_reservations,
+            'active_reservations': active_reservations,
+            'completed_reservations': completed_reservations,
             'total_revenue': total_revenue,
             'occupancy_rate': (occupied_spots / total_spots *100) if total_spots > 0 else 0
         },
@@ -725,6 +797,168 @@ def get_admin_parking_summary():
     }
 
     return summary
+
+def calculate_parking_cost(parking_start_str, parking_end_str, price_per_hour, billing_method='hourly_rounded'):
+    try:
+        parking_start = datetime.fromisoformat(parking_start_str)
+        parking_end = datetime.fromisoformat(parking_end_str)
+        
+        duration_seconds = (parking_end - parking_start).total_seconds()
+        duration_minutes = duration_seconds / 60
+        duration_hours = duration_seconds / 3600
+        
+        if billing_method == 'minute_precise':
+            billable_minutes = max(duration_minutes, 15)
+            billable_hours = billable_minutes / 60
+            parking_cost = billable_hours * price_per_hour
+            billing_explanation = f"Charged for {billable_minutes:.1f} minutes"
+            
+        elif billing_method == 'minimum_hour':
+            if duration_hours <= 1:
+                billable_hours = 1
+                billing_explanation = "Minimum 1 hour charge"
+            else:
+                billable_hours = duration_hours
+                billing_explanation = f"Charged for {duration_hours:.2f} hours"
+            parking_cost = billable_hours * price_per_hour
+            
+        else:
+            if duration_hours <= 1:
+                billable_hours = 1
+                billing_explanation = "Minimum 1 hour charge"
+            else:
+                billable_hours = math.ceil(duration_hours)
+                billing_explanation = f"Rounded up to {billable_hours} hours"
+            parking_cost = billable_hours * price_per_hour
+        
+        return {
+            'parking_cost': parking_cost,
+            'duration_seconds': duration_seconds,
+            'duration_minutes': duration_minutes,
+            'duration_hours': duration_hours,
+            'billable_hours': billable_hours,
+            'billing_explanation': billing_explanation,
+            'price_per_hour': price_per_hour,
+            'start_time': parking_start,
+            'end_time': parking_end
+        }
+        
+    except Exception as e:
+        return {'error': str(e), 'parking_cost': 0, 'duration_hours': 0}
+
+def get_current_parking_cost(reservation_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute('''
+            SELECT r.parking_timestamp, pl.price_per_hour, pl.prime_location_name
+            FROM reservations r
+            JOIN parking_spots ps ON r.spot_id = ps.id
+            JOIN parking_lots pl ON ps.lot_id = pl.id
+            WHERE r.id = ? AND r.status = 'occupied'
+        ''', (reservation_id,))
+        
+        result = cursor.fetchone()
+        if not result:
+            conn.close()
+            return None
+        
+        result = dict(result)
+        current_time = get_current_timestamp()
+        
+        cost_details = calculate_parking_cost(
+            result['parking_timestamp'], 
+            current_time, 
+            result['price_per_hour']
+        )
+        
+        cost_details['location_name'] = result['prime_location_name']
+        conn.close()
+        return cost_details
+        
+    except Exception as e:
+        conn.close()
+        return None
+
+def format_duration(duration_hours):
+    if duration_hours < 1:
+        minutes = int(duration_hours * 60)
+        return f"{minutes} minutes"
+    elif duration_hours < 24:
+        hours = int(duration_hours)
+        minutes = int((duration_hours - hours) * 60)
+        if minutes > 0:
+            return f"{hours}h {minutes}m"
+        else:
+            return f"{hours}h"
+    else:
+        days = int(duration_hours / 24)
+        remaining_hours = int(duration_hours % 24)
+        return f"{days}d {remaining_hours}h"
+
+def get_cost_breakdown(user_id, time_period='all'):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    date_filter = ""
+    if time_period == 'month':
+        date_filter = "AND r.created_at >= date('now', '-30 days')"
+    elif time_period == 'week':
+        date_filter = "AND r.created_at >= date('now', '-7 days')"
+    elif time_period == 'year':
+        date_filter = "AND r.created_at >= date('now', '-365 days')"
+    
+    cursor.execute(f'''
+        SELECT r.*, ps.id as spot_number, pl.prime_location_name, pl.price_per_hour,
+               CASE 
+                   WHEN r.parking_timestamp IS NOT NULL AND r.leaving_timestamp IS NOT NULL 
+                   THEN (julianday(r.leaving_timestamp) - julianday(r.parking_timestamp)) * 24
+                   ELSE 0
+               END as duration_hours
+        FROM reservations r
+        JOIN parking_spots ps ON r.spot_id = ps.id
+        JOIN parking_lots pl ON ps.lot_id = pl.id
+        WHERE r.user_id = ? AND r.status = 'completed' {date_filter}
+        ORDER BY r.created_at DESC
+    ''', (user_id,))
+    
+    reservations = [dict(row) for row in cursor.fetchall()]
+    
+    total_cost = sum(r['parking_cost'] or 0 for r in reservations)
+    total_hours = sum(r['duration_hours'] or 0 for r in reservations)
+    
+    location_costs = defaultdict(lambda: {'cost': 0, 'hours': 0, 'sessions': 0})
+    for r in reservations:
+        location = r['prime_location_name']
+        location_costs[location]['cost'] += r['parking_cost'] or 0
+        location_costs[location]['hours'] += r['duration_hours'] or 0
+        location_costs[location]['sessions'] += 1
+    
+    time_costs = defaultdict(lambda: {'cost': 0, 'hours': 0, 'sessions': 0})
+    for r in reservations:
+        if r['created_at']:
+            if time_period == 'year':
+                time_key = r['created_at'][:7]  # YYYY-MM
+            else:
+                time_key = r['created_at'][:10]  # YYYY-MM-DD
+            time_costs[time_key]['cost'] += r['parking_cost'] or 0
+            time_costs[time_key]['hours'] += r['duration_hours'] or 0
+            time_costs[time_key]['sessions'] += 1
+    
+    conn.close()
+    
+    return {
+        'reservations': reservations,
+        'total_cost': total_cost,
+        'total_hours': total_hours,
+        'total_sessions': len(reservations),
+        'average_cost_per_session': total_cost / len(reservations) if reservations else 0,
+        'average_cost_per_hour': total_cost / total_hours if total_hours > 0 else 0,
+        'location_breakdown': dict(location_costs),
+        'time_breakdown': dict(time_costs),
+        'time_period': time_period
+    }
 
 
 # Routes
@@ -774,17 +1008,17 @@ def register():
         password = request.form['password']
         confirm_password = request.form['confirm_password']
 
-    if password != confirm_password:
-        flash('Passwords do not match', 'error')
-    elif len(password) < 6:
-        flash('Password must be at least 6 characters long', 'error')
-    else:
-        user_id = create_user(username, email, full_name, password)
-        if user_id:
-            flash('Registration successful, Please login now', 'success')
-            return redirect(url_for('login'))
+        if password != confirm_password:
+            flash('Passwords do not match', 'error')
+        elif len(password) < 6:
+            flash('Password must be at least 6 characters long', 'error')
         else:
-            flash('Username or email already exists', 'error')
+            user_id = create_user(username, email, full_name, password)
+            if user_id:
+                flash('Registration successful, Please login now', 'success')
+                return redirect(url_for('login'))
+            else:
+                flash('Username or email already exists', 'error')
 
     return render_template('register.html')
 
@@ -858,13 +1092,18 @@ def admin_edit_lot(lot_id):
         elif price_per_hour <= 0:
             flash('Price per hour must be greater than 0!', 'error')
         else:
-            if update_parking_lot(lot_id, location_name, address, pin_code, price_per_hour, max_spots):
-                flash('Parking lot updated successfully!', 'success')
-                return redirect(url_for('admin_lots'))
+            lot, spots = get_parking_lot_details(lot_id)
+            occupied_count = len([s for s in spots if s['status'] == 'O'])
+            
+            if max_spots < occupied_count:
+                flash(f'Cannot reduce spots below {occupied_count}. There are currently {occupied_count} occupied/reserved spots.', 'error')
             else:
-                flash('Error updating parking lot!', 'error')
+                if update_parking_lot(lot_id, location_name, address, pin_code, price_per_hour, max_spots):
+                    flash('Parking lot updated successfully!', 'success')
+                    return redirect(url_for('admin_lots'))
+                else:
+                    flash('Error updating parking lot! Please try again.', 'error')
     
-    # Get current lot details
     lot, spots = get_parking_lot_details(lot_id)
     if not lot:
         flash('Parking lot not found!', 'error')
@@ -898,6 +1137,8 @@ def admin_view_lot(lot_id):
         flash('Parking lot not found!', 'error')
         return redirect(url_for('admin_lots'))
     
+    return render_template('admin_view_lot.html', lot=lot, spots=spots)
+    
 @app.route('/admin/users')
 def admin_users():
     auth_check = require_admin()
@@ -926,6 +1167,12 @@ def user_dashboard():
     active_reservations = get_user_reservations(session['user_id'], include_completed=False)
     
     available_lots = get_available_parking_lots()
+
+    for reservation in active_reservations:
+        if reservation['status'] == 'occupied':
+            current_cost = get_current_parking_cost(reservation['id'])
+            if current_cost:
+                reservation['current_cost'] = current_cost
 
     return render_template('user_dashboard.html', active_reservations=active_reservations, available_lots=available_lots)
 
@@ -965,7 +1212,7 @@ def user_end_parking(reservation_id):
     if auth_check:
         return auth_check
     
-    success, message, cost = end_parking(reservation_id, session['user_id'])
+    success, message, cost, cost_details  = end_parking(reservation_id, session['user_id'])
 
     if success:
         flash(message, 'success')
@@ -997,7 +1244,7 @@ def user_history():
     
     reservations = get_user_reservations(session['user_id'], include_completed=True)
 
-    return render_template(url_for('user_history.html', reservations=reservations))
+    return render_template('user_history.html', reservations=reservations)
 
 @app.route('/user/summary')
 def user_summary():
@@ -1008,4 +1255,33 @@ def user_summary():
     summary = get_user_parking_summary(session['user_id'])
     return render_template('user_summary.html', summary=summary)
 
+@app.route('/user/cost_breakdown')
+def user_cost_breakdown():
+    auth_check = require_user()
+    if auth_check:
+        return auth_check
+    
+    time_period = request.args.get('period', 'all')
+    breakdown = get_cost_breakdown(session['user_id'], time_period)
+    
+    return render_template('user_cost_breakdown.html', breakdown=breakdown)
 
+@app.route('/api/current_cost/<int:reservation_id>')
+def api_current_cost(reservation_id):
+    auth_check = require_user()
+    if auth_check:
+        return jsonify({'error': 'Unauthorized'}), 401
+    
+    cost_details = get_current_parking_cost(reservation_id)
+    if cost_details:
+        return jsonify({
+            'current_cost': cost_details['parking_cost'],
+            'duration_formatted': format_duration(cost_details['duration_hours']),
+            'billing_explanation': cost_details['billing_explanation'],
+            'location_name': cost_details['location_name']
+        })
+    else:
+        return jsonify({'error': 'Reservation not found'}), 404
+
+if __name__ == '__main__':
+    app.run(debug=True)

@@ -95,10 +95,12 @@
     border-radius: 4px;
     margin-top: 8px;
     overflow: hidden;
+    --occupancy: 0%;
 }
 
 .progress-fill {
     height: 100%;
+    width: var(--occupancy);
     transition: width 0.3s ease;
 }
 
@@ -127,19 +129,39 @@
     flex-wrap: wrap;
 }
 
-.progress-bar {
-    background: #dee2e6;
-    height: 8px;
+/* Fixed reserve button styling */
+.reserve-btn {
+    width: 100%;
+    text-align: center;
+    background: #007bff;
+    color: white;
+    padding: 12px 15px;
+    border: none;
     border-radius: 4px;
-    margin-top: 8px;
-    overflow: hidden;
-    --occupancy: 0%;
+    cursor: pointer;
+    text-decoration: none;
+    display: block;
+    box-sizing: border-box;
+    font-size: 0.95em;
+    font-weight: 500;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    line-height: 1.2;
 }
 
-.progress-fill {
-    height: 100%;
-    width: var(--occupancy);
-    transition: width 0.3s ease;
+.reserve-btn:hover {
+    background: #0056b3;
+    color: white;
+    text-decoration: none;
+}
+
+.reserve-btn:disabled {
+    background: #6c757d;
+    cursor: not-allowed;
+}
+
+.reserve-btn:disabled:hover {
+    background: #6c757d;
 }
 </style>
 
@@ -235,6 +257,7 @@
         <h3>Available Parking Lots</h3>
         <div>
             <a href="{{ url_for('user_summary') }}" class="btn" style="background: #17a2b8; margin-right: 10px;">View Summary</a>
+            <a href="{{ url_for('user_cost_breakdown') }}" class="btn" style="background: #28a745; margin-right: 10px;">Cost Analysis</a>
             <a href="{{ url_for('user_history') }}" class="btn" style="background: #6c757d;">View History</a>
         </div>
     </div>
@@ -301,13 +324,12 @@
                 <!-- Reserve Button -->
                 {% if lot.available_spots > 0 %}
                     <a href="{{ url_for('user_reserve_spot', lot_id=lot.id) }}" 
-                       class="btn" 
-                       style="width: 100%; text-align: center; background: #007bff;"
+                       class="reserve-btn"
                        onclick="return confirm('Reserve a parking spot at {{ lot.prime_location_name }}?')">
-                        Reserve Spot (Auto-Assigned)
+                        Reserve Spot<br><small>(Auto-Assigned)</small>
                     </a>
                 {% else %}
-                    <button class="btn" style="width: 100%; background: #6c757d; cursor: not-allowed;" disabled>
+                    <button class="reserve-btn" disabled>
                         Fully Occupied
                     </button>
                 {% endif %}
